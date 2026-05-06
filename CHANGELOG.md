@@ -13,6 +13,34 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.0.2] - 2026-05-06
+
+Documentation patch — README's quickstart now matches what the SDK
+actually does at runtime.
+
+### Fixed
+
+- **Quickstart now includes the required `await init()` call.**
+  `init()` is a one-time async bootstrap for the libpg-query WASM
+  parser; calling `analyze()` before init returns a `parseError`.
+  The 1.0.0 / 1.0.1 README omitted this step, so anyone copying the
+  example verbatim would hit a confusing "parser not initialized"
+  error. Both ESM and CJS variants now show the full bootstrap.
+- **Quickstart sample output corrected.** SQL-003 fires at confidence
+  99 for UPDATE (97 for DELETE), not 95 as the older example showed.
+  Detail / fix prose now matches the actual catch output.
+- **CI badge URL fixed.** Status badge points at
+  `github.com/MuddySheep/vibeguard-local` instead of the original
+  `TODO-org/TODO-repo` placeholder. The image now displays correctly
+  on the npm package page and on the GitHub repo.
+
+### Added
+
+- CommonJS quickstart example alongside the ESM one. Verified
+  end-to-end against the registry — `require('@vibeguard-dev/local')`
+  loads cleanly, fires all 12 catches with correct severity/
+  confidence on canonical positive cases.
+
 ## [1.0.1] - 2026-05-06
 
 Patch release.

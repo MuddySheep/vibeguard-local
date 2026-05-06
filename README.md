@@ -5,7 +5,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@vibeguard-dev/local)](https://www.npmjs.com/package/@vibeguard-dev/local)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](./LICENSE)
-[![CI](https://github.com/TODO-org/TODO-repo/actions/workflows/ci.yml/badge.svg)](https://github.com/TODO-org/TODO-repo/actions)
+[![CI](https://github.com/MuddySheep/vibeguard-local/actions/workflows/ci.yml/badge.svg)](https://github.com/MuddySheep/vibeguard-local/actions)
 
 ---
 
@@ -23,11 +23,16 @@ zero network calls.
 npm install @vibeguard-dev/local libpg-query
 ```
 
-`libpg-query` is a peer dependency. The SDK targets server-side Node
-usage; browser support is not in the initial release.
+`libpg-query` is a peer dependency — install it alongside the SDK.
+Server-side Node only for the initial release; browser support is
+out of scope for now.
+
+### ESM
 
 ```ts
-import { analyze } from "@vibeguard-dev/local";
+import { analyze, init } from "@vibeguard-dev/local";
+
+await init(); // one-time WASM-parser bootstrap
 
 const result = analyze(`UPDATE users SET email = 'x@y.com'`);
 
@@ -35,17 +40,30 @@ if (result.catches.length > 0) {
   console.error(result.catches[0]);
   // {
   //   code: 'SQL-003',
-  //   severity: 'block',
-  //   confidence: 95,
   //   title: 'Unbounded UPDATE statement',
-  //   detail: 'UPDATE on `users` table has no WHERE clause...',
-  //   fix: 'Add a WHERE clause that scopes the update to specific rows.',
+  //   severity: 'block',
+  //   confidence: 99,
+  //   detail: 'UPDATE on `users` has no WHERE clause. Every row in the table will be modified...',
+  //   fix:    'Add a WHERE clause that scopes the update to specific rows...',
   //   threatCategories: ['destruction'],
   // }
 }
 ```
 
-That's the whole API.
+### CommonJS
+
+```js
+const { analyze, init } = require("@vibeguard-dev/local");
+
+(async () => {
+  await init();
+  const result = analyze("DELETE FROM users");
+  console.log(result.catches[0]?.code); // 'SQL-003'
+})();
+```
+
+That's the whole API. After `init()`, every `analyze()` call is
+synchronous and sub-millisecond on typical queries.
 
 ## What we deliberately do NOT do
 
