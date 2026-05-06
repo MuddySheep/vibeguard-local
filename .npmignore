@@ -1,0 +1,47 @@
+# Source — only ship the built artifacts
+src/
+tests/
+benchmarks/
+examples/
+docs/
+
+# Dev config
+tsconfig.json
+tsup.config.ts
+.eslintrc*
+.eslintignore
+vitest.config.*
+
+# CI / GitHub
+.github/
+
+# Lockfiles
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Internal docs that aren't shipped to consumers
+ARCHITECTURE.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+ROADMAP.md
+STABILITY.md
+CHANGELOG.md
+SECURITY.md
+
+# Test artifacts
+coverage/
+.nyc_output/
+
+# Build cache
+.tsimp/
+*.tsbuildinfo

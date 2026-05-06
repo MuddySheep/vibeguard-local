@@ -1,0 +1,105 @@
+name: Propose a new catch
+description: Suggest a new SQL anti-pattern for @vibeguard-dev/local to detect
+labels: ["catch-proposal", "needs-discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a new catch.
+
+        **Before filing**, please check that:
+
+        - The pattern is **detectable from a single statement's AST**.
+          Patterns that need runtime context (row counts, schema metadata,
+          prior queries in the session, behavioral baselines) belong in
+          the cloud product, not the SDK.
+        - You can link to a **real-world incident** — public blog post,
+          post-mortem, bug report, CVE, or similar. We don't ship
+          hypothetical catches.
+        - The pattern is **Postgres-dialect-applicable**. Other dialects
+          (MySQL, SQL Server, Oracle, SQLite) belong in sibling SDKs.
+
+        Read [CONTRIBUTING.md](../../CONTRIBUTING.md) for the full process
+        before opening this issue.
+
+  - type: textarea
+    id: pattern-name
+    attributes:
+      label: Proposed pattern name
+      description: A short, plain-English title (e.g. "Cartesian explosion", "OFFSET without ORDER BY")
+    validations:
+      required: true
+
+  - type: textarea
+    id: real-world
+    attributes:
+      label: Real-world incident
+      description: |
+        Link to a public blog post, post-mortem, bug report, CVE, or
+        equivalent where this pattern caused a real production issue.
+        Include any key details about the incident's blast radius.
+    validations:
+      required: true
+
+  - type: textarea
+    id: sql-fires
+    attributes:
+      label: Example SQL that SHOULD fire
+      description: One or more example queries that the proposed catch should detect.
+      render: sql
+    validations:
+      required: true
+
+  - type: textarea
+    id: sql-no-fire
+    attributes:
+      label: Example SQL that should NOT fire (false-positive guards)
+      description: |
+        At least 2-3 examples of patterns that look similar but should
+        NOT fire. This is the most important part of the proposal — a
+        catch is only as good as its false-positive resistance.
+      render: sql
+    validations:
+      required: true
+
+  - type: textarea
+    id: ast-detection
+    attributes:
+      label: AST detection sketch
+      description: |
+        How would the rule detect this pattern at the AST level?
+        Describe the libpg-query node shapes you'd inspect. (You don't
+        need to write the code yet — just describe the approach.)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Proposed severity
+      description: How dangerous is this pattern in production?
+      options:
+        - block — dangerous in essentially all contexts
+        - warn — suspicious or context-dependent
+        - info — worth noting but rarely a blocker
+    validations:
+      required: true
+
+  - type: textarea
+    id: confidence
+    attributes:
+      label: Proposed confidence range
+      description: |
+        Where on the 0–100 confidence scale should this catch land?
+        Justify the range based on the strength of the AST signal.
+      placeholder: e.g. 75–85, because the AST shape is unambiguous when present, but...
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Why not handle this elsewhere?
+      description: |
+        Is there a tool that already handles this (linter, static
+        analyzer, ORM)? If so, why does it belong in this SDK
+        specifically? (Good answer: "It's specific to AI-agent-generated
+        SQL and existing tools target human-written SQL.")

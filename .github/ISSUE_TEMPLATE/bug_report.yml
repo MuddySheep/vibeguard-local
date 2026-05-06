@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a bug, false positive, or unexpected behavior
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Before filing, please check that:
+
+        - You're on the latest version of `@vibeguard-dev/local`
+        - The bug is **not** a security issue (those go to `<TODO: security email>`)
+        - The bug is **not** a false negative on a real-world dangerous pattern (those are also security issues)
+
+  - type: input
+    id: version
+    attributes:
+      label: SDK version
+      description: Output of `npm list @vibeguard-dev/local` or your package.json entry
+      placeholder: e.g. 0.5.0
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      placeholder: e.g. 20.11.1
+    validations:
+      required: true
+
+  - type: input
+    id: libpg-version
+    attributes:
+      label: libpg-query version (your peer-dep)
+      placeholder: e.g. 17.5.0
+
+  - type: textarea
+    id: input-sql
+    attributes:
+      label: Input SQL
+      description: The SQL string you passed to `analyze()`
+      render: sql
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect `analyze()` to return for this input?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What did `analyze()` actually return? Paste the AnalysisResult or error.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: A small code snippet that reproduces the issue. Strip down to the smallest case that fails.
+      render: typescript
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How is this affecting you?
+      options:
+        - Low — annoyance, easy to work around
+        - Medium — blocks a non-critical workflow
+        - High — blocks a critical workflow
+    validations:
+      required: true

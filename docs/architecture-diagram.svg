@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Three-layer architecture diagram for @vibeguard-dev/local.
+  Concentric layers; outer is the public API, inner is the AST substrate.
+  Source kept as plain SVG (text-versionable) — no design-tool source file.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" width="720" height="480"
+     font-family="ui-sans-serif, system-ui, sans-serif">
+  <style>
+    .layer { fill: none; stroke-width: 2; rx: 8; ry: 8; }
+    .l1 { stroke: #2563eb; }
+    .l2 { stroke: #059669; }
+    .l3 { stroke: #d97706; }
+    .label { font-size: 14px; fill: #111827; font-weight: 600; }
+    .sub { font-size: 12px; fill: #4b5563; }
+    .api { font-size: 13px; fill: #1f2937; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    .arrow { stroke: #6b7280; stroke-width: 1.5; fill: none; }
+    .arrow-head { fill: #6b7280; }
+    .title { font-size: 16px; font-weight: 700; fill: #111827; }
+  </style>
+
+  <text x="360" y="28" text-anchor="middle" class="title">@vibeguard-dev/local — three-layer architecture</text>
+
+  <!-- Layer 1: Public API (outermost) -->
+  <rect class="layer l1" x="40" y="60"  width="640" height="380" />
+  <text x="60" y="84" class="label">Public API</text>
+  <text x="60" y="104" class="api">analyze(sql, options?) → AnalysisResult</text>
+  <text x="60" y="122" class="api">init() → Promise&lt;void&gt;     (one-time WASM bootstrap)</text>
+  <text x="60" y="140" class="sub">Throw-safe: bad SQL returns parseError; bad rule logs &amp; skips.</text>
+
+  <!-- Layer 2: Rule registry -->
+  <rect class="layer l2" x="80"  y="170" width="560" height="190" />
+  <text x="100" y="194" class="label">Rule registry</text>
+  <text x="100" y="214" class="api">RULES = [SQL_001, SQL_002, …, SQL_012] as const</text>
+  <text x="100" y="232" class="sub">12 catches — each a pure (ast) → Catch | null function</text>
+  <text x="100" y="250" class="sub">Stable IDs. Severity: block / warn / info. Confidence: 0–100.</text>
+
+  <!-- Layer 3: Substrate (innermost) -->
+  <rect class="layer l3" x="120" y="270" width="480" height="80" />
+  <text x="140" y="294" class="label">Substrate</text>
+  <text x="140" y="312" class="api">parseQuery / astWalk / extractFromTables / extractColumns / runRules</text>
+  <text x="140" y="330" class="sub">Pure helpers over libpg-query AST nodes. No threat detection.</text>
+
+  <!-- Footer hints -->
+  <text x="40"  y="465" class="sub">Sync after init(). 8.5 KB gz ESM. Zero runtime deps; libpg-query is a peer.</text>
+  <text x="680" y="465" text-anchor="end" class="sub">Apache 2.0</text>
+</svg>

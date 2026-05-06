@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Test + coverage
+coverage/
+.nyc_output/
+
+# Editor + OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# Lockfiles — keep one, ignore others
+# (we'll use package-lock.json since the SDK is npm-published)
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# Build artifacts that should never be committed
+*.tgz
+.tsimp/
+
+# Bench per-run results (baseline.json IS tracked; per-run results are noise)
+benchmarks/results/
+
+# Local planning / workflow notes — kept on the maintainer's machine,
+# not part of the public repo. (The shipped artifacts the planning
+# describes — sources, tests, examples, ARCHITECTURE.md, etc. — are
+# tracked normally.)
+docs/EPIC-WORKFLOW.md
+docs/epics/
+docs/stories/

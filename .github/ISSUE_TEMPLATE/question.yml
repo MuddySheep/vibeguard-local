@@ -1,0 +1,36 @@
+name: Question
+description: Ask a question about how to use the SDK
+labels: ["question", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Got a question? Happy to help.
+
+        **Quick checks first:**
+
+        - The [README](../../README.md) covers basic usage
+        - [ARCHITECTURE.md](../../ARCHITECTURE.md) explains how the
+          SDK is laid out
+        - [CONTRIBUTING.md](../../CONTRIBUTING.md) covers how to
+          propose changes
+
+        If your question is about a bug or unexpected behavior, please
+        use the **Bug report** template instead.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to do, and what's blocking you?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: |
+        What have you tried? Code snippets, links to your project, or
+        anything else that helps us understand your situation.
+      render: typescript

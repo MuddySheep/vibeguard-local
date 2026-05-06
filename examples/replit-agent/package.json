@@ -1,0 +1,24 @@
+{
+  "name": "@vibeguard-dev/example-replit-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Integration example: Replit Agent SQL pre-execute hook via @vibeguard-dev/local. The meta-loop — Replit Agent built VibeGuard; now Replit Agent uses VibeGuard.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vibeguard-dev/local": "file:../..",
+    "libpg-query": "^17.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
