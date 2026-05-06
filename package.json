@@ -1,6 +1,6 @@
 {
   "name": "@vibeguard-dev/local",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Static SQL safety analysis for AI agents — catch dangerous queries before they reach your database.",
   "keywords": [
     "sql",
@@ -11,16 +11,16 @@
     "security",
     "vibeguard"
   ],
-  "homepage": "https://github.com/TODO-org/TODO-repo#readme",
+  "homepage": "https://github.com/MuddySheep/vibeguard-local#readme",
   "bugs": {
-    "url": "https://github.com/TODO-org/TODO-repo/issues"
+    "url": "https://github.com/MuddySheep/vibeguard-local/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/TODO-org/TODO-repo.git"
+    "url": "git+https://github.com/MuddySheep/vibeguard-local.git"
   },
   "license": "Apache-2.0",
-  "author": "TODO: name (https://github.com/TODO-username)",
+  "author": "MuddySheep (https://github.com/MuddySheep)",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -79,8 +79,7 @@
     "node": ">=18.0.0"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "size-limit": [
     {

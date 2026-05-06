@@ -13,6 +13,29 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.0.1] - 2026-05-06
+
+Patch release.
+
+### Fixed
+
+- **CJS resolution.** The `1.0.0` CJS bundle compiled
+  `createRequire(import.meta.url)` to `createRequire(undefined)`
+  because tsup didn't shim `import.meta.url` for CJS output by
+  default. Net effect: `require('@vibeguard-dev/local')` consumers
+  hit a spurious *"requires libpg-query as a peer dependency"* error
+  even when libpg-query was correctly installed. Fixed by enabling
+  `shims: true` in `tsup.config.ts`. ESM users were unaffected.
+  Caught via post-publish smoke; affected anyone pulling the SDK
+  via CommonJS.
+
+### Changed
+
+- `package.json`: `homepage`, `bugs.url`, `repository.url`, and
+  `author` updated from the original placeholder values to the
+  actual public repo URLs (`github.com/MuddySheep/vibeguard-local`).
+  The npm package page's "Repository" link now resolves correctly.
+
 ## [1.0.0] - 2026-05-06
 
 First stable release.
