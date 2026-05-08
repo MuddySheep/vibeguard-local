@@ -46,6 +46,14 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # Gate the deploy on the same checks CI runs. We never publish
+      # broken code to the public playground.
+      - name: Typecheck (workspace)
+        run: pnpm -r --if-present typecheck
+
+      - name: Test (workspace)
+        run: pnpm -r --if-present test
+
       - name: Build packages/sdk
         run: pnpm --filter @vibeguard-dev/local build
 

@@ -1,0 +1,51 @@
+# Release — fires on a `v*` tag push.
+#
+# Creates a DRAFT GitHub Release with auto-generated notes (commits
+# since the previous tag) so the maintainer can review and publish
+# from the GitHub UI. Doesn't run npm publish — that's done
+# separately, locally, with the maintainer's npm credentials.
+#
+# Tagging convention for the OSS roadmap milestones:
+#
+#   git tag v1.5.0 -m "V1.5: playground + UI + SDK 1.5"
+#   git push origin v1.5.0
+#
+# For per-package releases the maintainer can use scoped tags like
+# `@vibeguard-dev/local-v1.5.0` or `eslint-plugin-vibeguard-v1.0.0`;
+# the workflow only fires on the umbrella `v*` shape since that's
+# what the spec's release sequence (§10) tracks.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.5.0). The tag must already exist.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history so auto-generated notes can diff against
+          # the previous tag.
+          fetch-depth: 0
+
+      - name: Create draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: false

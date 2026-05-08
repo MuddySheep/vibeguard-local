@@ -5,13 +5,18 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint-typecheck-test:
-    name: Lint + Typecheck + Test
+    name: Lint + Typecheck + Test (workspace)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -33,14 +38,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
+      # Workspace-wide gates. `-r --if-present` fans out across every
+      # package and skips any package that doesn't declare the script.
+      # As of V1.5: SDK + UI + eslint-plugin + playground all have
+      # typecheck + test; only SDK has lint.
+      - name: Typecheck (workspace)
+        run: pnpm -r --if-present typecheck
 
-      - name: Typecheck
-        run: pnpm typecheck
+      - name: Lint (SDK)
+        run: pnpm --filter @vibeguard-dev/local lint
 
-      - name: Test
-        run: pnpm test
+      - name: Test (workspace)
+        run: pnpm -r --if-present test
+
+      - name: Build (workspace)
+        run: pnpm -r --if-present build
 
       - name: Test coverage (Node 20.x only)
         if: matrix.node-version == '20.x'
@@ -60,9 +72,9 @@ jobs:
           node-version: 20.x
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: size-limit
-        run: pnpm size
+      - run: pnpm -r --if-present build
+      - name: size-limit (SDK)
+        run: pnpm --filter @vibeguard-dev/local size
 
   bench-regression:
     name: Benchmark regression
