@@ -38,6 +38,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Build first. pnpm `-r` builds in topological order, so SDK
+      # is built before its consumers (UI / eslint-plugin /
+      # playground). Workspace deps resolve via symlinks to package
+      # roots, but TypeScript reads types from `dist/index.d.ts`
+      # (per `package.json#exports.types`) — that file doesn't exist
+      # until the dependency package is built. Without this step,
+      # the consumer typechecks fail with TS2307 "Cannot find
+      # module '@vibeguard-dev/local'".
+      - name: Build (workspace)
+        run: pnpm -r --if-present build
+
       # Workspace-wide gates. `-r --if-present` fans out across every
       # package and skips any package that doesn't declare the script.
       # As of V1.5: SDK + UI + eslint-plugin + playground all have
@@ -50,9 +61,6 @@ jobs:
 
       - name: Test (workspace)
         run: pnpm -r --if-present test
-
-      - name: Build (workspace)
-        run: pnpm -r --if-present build
 
       - name: Test coverage (Node 20.x only)
         if: matrix.node-version == '20.x'

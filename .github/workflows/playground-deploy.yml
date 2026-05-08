@@ -46,6 +46,14 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # SDK + UI must be built before consumers (playground,
+      # eslint-plugin) can resolve `@vibeguard-dev/local`'s and
+      # `@vibeguard-dev/ui`'s types. pnpm `-r --if-present build`
+      # builds in topological order; this single step replaces the
+      # explicit per-package build chain.
+      - name: Build (workspace, in dependency order)
+        run: pnpm -r --if-present build
+
       # Gate the deploy on the same checks CI runs. We never publish
       # broken code to the public playground.
       - name: Typecheck (workspace)
@@ -53,15 +61,6 @@ jobs:
 
       - name: Test (workspace)
         run: pnpm -r --if-present test
-
-      - name: Build packages/sdk
-        run: pnpm --filter @vibeguard-dev/local build
-
-      - name: Build packages/ui
-        run: pnpm --filter @vibeguard-dev/ui build
-
-      - name: Build playground
-        run: pnpm --filter @vibeguard-dev/playground build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
