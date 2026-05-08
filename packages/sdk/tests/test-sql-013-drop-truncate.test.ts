@@ -237,6 +237,49 @@ describe('SQL-013 — edge cases', () => {
 });
 
 // ----------------------------------------------------------------------
+// Multi-statement scripts — surface every destructive DDL, not just the first
+// ----------------------------------------------------------------------
+
+describe('SQL-013 — multi-statement scripts surface all destructive DDLs', () => {
+  it('shows × N count in the title for 3 DROP TABLEs', () => {
+    const c = fire('DROP TABLE a; DROP TABLE b; DROP TABLE c;');
+    expect(c?.code).toBe('SQL-013');
+    expect(c?.severity).toBe('block');
+    expect(c?.title).toContain('× 3');
+  });
+
+  it('lists the additional statements in the detail', () => {
+    const c = fire('DROP TABLE a; DROP TABLE b; DROP TABLE c;');
+    expect(c?.detail).toContain('Additional destructive statements');
+    expect(c?.detail).toContain('b');
+    expect(c?.detail).toContain('c');
+  });
+
+  it('does not append the count suffix when there is only one statement', () => {
+    const c = fire('DROP TABLE users');
+    expect(c?.title).not.toContain('×');
+  });
+
+  it('mixes DROP TABLE and TRUNCATE in one script', () => {
+    const c = fire('DROP TABLE a; TRUNCATE b;');
+    expect(c?.code).toBe('SQL-013');
+    expect(c?.title).toContain('× 2');
+    expect(c?.detail).toContain('TRUNCATE');
+    expect(c?.detail).toContain('b');
+  });
+
+  it('prefers a destructive DROP over a leading INDEX drop for primary severity', () => {
+    // INDEX alone is warn; if any TABLE/SCHEMA/DB/TRUNCATE is also
+    // present, the catch escalates to block and lists INDEX as
+    // an additional statement.
+    const c = fire('DROP INDEX idx_x; DROP TABLE users;');
+    expect(c?.severity).toBe('block');
+    expect(c?.title).toContain('DROP TABLE');
+    expect(c?.detail).toContain('DROP INDEX');
+  });
+});
+
+// ----------------------------------------------------------------------
 // Output stability — STABILITY.md commitment
 // ----------------------------------------------------------------------
 

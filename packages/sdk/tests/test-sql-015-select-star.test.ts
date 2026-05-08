@@ -103,6 +103,54 @@ describe('SQL-015 — does not fire on explicit projections', () => {
   });
 });
 
+describe('SQL-015 — does not fire on EXISTS / NOT EXISTS subselect stars', () => {
+  // Every major ORM (Prisma, SQLAlchemy, Hibernate, ActiveRecord,
+  // Sequelize) emits `EXISTS (SELECT * FROM ...)`. Postgres
+  // optimizes the projection of EXISTS away, so the `*` is
+  // irrelevant — firing SQL-015 here is a false positive.
+  it('does not fire on EXISTS (SELECT * FROM ...)', () => {
+    expect(
+      fire(
+        'SELECT id FROM users u WHERE EXISTS (SELECT * FROM orders o WHERE o.user_id = u.id)',
+      ),
+    ).toBeNull();
+  });
+
+  it('does not fire on NOT EXISTS (SELECT * FROM ...)', () => {
+    expect(
+      fire(
+        'SELECT id FROM users u WHERE NOT EXISTS (SELECT * FROM orders o WHERE o.user_id = u.id)',
+      ),
+    ).toBeNull();
+  });
+
+  it('does not fire on EXISTS (SELECT t.* FROM ...) either', () => {
+    expect(
+      fire(
+        'SELECT id FROM users u WHERE EXISTS (SELECT o.* FROM orders o WHERE o.user_id = u.id)',
+      ),
+    ).toBeNull();
+  });
+
+  it('still fires on a real SELECT * even when EXISTS is also present', () => {
+    // Top-level projection IS over-fetch; the EXISTS exemption
+    // only suppresses stars *inside* the EXISTS subselect.
+    const c = fire(
+      'SELECT * FROM users u WHERE EXISTS (SELECT * FROM orders o WHERE o.user_id = u.id)',
+    );
+    expect(c?.code).toBe('SQL-015');
+  });
+
+  it('still fires on a non-EXISTS scalar subquery with SELECT *', () => {
+    // `IN (SELECT * ...)` is NOT exempt — its projection columns
+    // matter for the IN comparison.
+    const c = fire(
+      'SELECT id FROM users WHERE id IN (SELECT * FROM blocked_ids)',
+    );
+    expect(c?.code).toBe('SQL-015');
+  });
+});
+
 describe('SQL-015 — does not fire on function-arg stars', () => {
   it('does not fire on COUNT(*)', () => {
     expect(fire('SELECT COUNT(*) FROM users')).toBeNull();

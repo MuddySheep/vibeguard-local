@@ -34,6 +34,10 @@ outputType = "webview"
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 24678
+externalPort = 3001
+
 [deployment]
 deploymentTarget = "static"
 build = ["bash", "-c", "COREPACK_ENABLE_STRICT=0 pnpm --filter @vibeguard-dev/local build && COREPACK_ENABLE_STRICT=0 pnpm --filter @vibeguard-dev/ui build && COREPACK_ENABLE_STRICT=0 pnpm --filter @vibeguard-dev/playground build"]

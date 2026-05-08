@@ -18,6 +18,46 @@ terminate, irreversible `DROP` / `TRUNCATE`, over-fetching projections.
 **15 senior-DBA-level checks**, all static, sub-millisecond, zero network
 calls.
 
+## Known limitations
+
+VibeGuard is a **static, schema-blind** analyzer. It checks the *shape*
+of a query, not its run-time effect. A few boundaries you should know
+about before you ship it into CI:
+
+- **Tautological `WHERE` clauses are not detected.** SQL-003 verifies
+  that an `UPDATE` / `DELETE` *has* a `WHERE` clause; it does not check
+  whether the clause meaningfully filters. The following slip through
+  today and behave the same as an unbounded statement at run time:
+
+  ```sql
+  DELETE FROM users WHERE 1=1;
+  UPDATE users SET banned = true WHERE id = id;
+  DELETE FROM users WHERE id IS NOT NULL;             -- on a NOT NULL PK
+  DELETE FROM users WHERE id IN (SELECT id FROM users);
+  ```
+
+  This is the most common AI-agent placeholder pattern (Cursor and
+  Claude Code both emit `WHERE 1=1` as "I'll fill this in later" and
+  forget). A literal-tautology detector (`WHERE 1=1`, `WHERE true`,
+  `WHERE col = col`, `WHERE NOT false`) is planned as **SQL-016** in
+  v1.1.0. Until then: assume `WHERE 1=1` is a missing filter and treat
+  it like `DELETE FROM users` with no `WHERE` at all.
+
+- **Schema-aware checks are out of scope.** The SDK does not know
+  which columns are `NOT NULL`, which columns are foreign-key targets,
+  or which tables hold sensitive data. Rules that would require that
+  context (e.g. "this `WHERE col IS NOT NULL` is a no-op because
+  `col` is the `NOT NULL` PK") are deliberately not in `local`.
+
+- **Run-time effects are not modeled.** The analyzer does not execute
+  the query, plan it, or evaluate constants. `WHERE 1=1` and `WHERE
+  current_timestamp > '1970-01-01'` are static-tautological in the same
+  way; the SDK treats both as "has a `WHERE` clause".
+
+The trade-off is intentional: every check runs offline, sub-millisecond,
+with zero network calls and zero schema dependencies. If you need
+schema-aware analysis, that's the cloud product.
+
 ## Quickstart
 
 ```bash

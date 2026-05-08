@@ -33,6 +33,15 @@
 //   The catch fires once with all names listed in the detail. The
 //   rule contract is `(ast) => Catch | null` — single fire — so we
 //   collect every dropped target's name and report them together.
+//
+// Multi-statement scripts (e.g. `DROP TABLE a; DROP TABLE b;`):
+//   Same approach. We walk the WHOLE AST, collect every destructive
+//   DDL we find, and surface them in one Catch. The title gets a
+//   `× N` count suffix when more than one destructive statement
+//   is present so the developer doesn't think only the first was
+//   detected. INDEX and destructive variants are kept separate —
+//   the first destructive (block) variant takes priority; trailing
+//   INDEX drops are still mentioned in the detail.
 
 import { astWalk } from '../ast-walk.js';
 import type { Catch, Rule } from '../types.js';
@@ -51,10 +60,9 @@ interface DropTarget {
 }
 
 export const SQL_013: Rule = (ast) => {
-  let target: DropTarget | null = null;
+  const targets: DropTarget[] = [];
 
   astWalk(ast, (node) => {
-    if (target) return 'stop';
     if (!node || typeof node !== 'object') return undefined;
     const obj = node as Record<string, unknown>;
 
@@ -66,28 +74,28 @@ export const SQL_013: Rule = (ast) => {
       const objects = stmt['objects'];
 
       if (removeType === 'OBJECT_TABLE') {
-        target = {
+        targets.push({
           kind: 'TABLE',
           names: extractObjectNames(objects),
           cascade,
-        };
-        return 'stop';
+        });
+        return undefined;
       }
       if (removeType === 'OBJECT_SCHEMA') {
-        target = {
+        targets.push({
           kind: 'SCHEMA',
           names: extractObjectNames(objects),
           cascade,
-        };
-        return 'stop';
+        });
+        return undefined;
       }
       if (removeType === 'OBJECT_INDEX') {
-        target = {
+        targets.push({
           kind: 'INDEX',
           names: extractObjectNames(objects),
           cascade,
-        };
-        return 'stop';
+        });
+        return undefined;
       }
       // Other DropStmt removeTypes (VIEW, FUNCTION, SEQUENCE, TYPE,
       // …) intentionally fall through — out of V1.1 scope.
@@ -98,36 +106,46 @@ export const SQL_013: Rule = (ast) => {
       const stmt = obj['DropdbStmt'] as Record<string, unknown>;
       const dbname =
         typeof stmt['dbname'] === 'string' ? stmt['dbname'] : '<unknown>';
-      target = {
+      targets.push({
         kind: 'DATABASE',
         names: [dbname],
         cascade: false,
-      };
-      return 'stop';
+      });
+      return undefined;
     }
 
     if ('TruncateStmt' in obj) {
       const stmt = obj['TruncateStmt'] as Record<string, unknown>;
-      target = {
+      targets.push({
         kind: 'TRUNCATE',
         names: extractTruncateRelations(stmt['relations']),
         cascade: stmt['behavior'] === 'DROP_CASCADE',
-      };
-      return 'stop';
+      });
+      return undefined;
     }
 
     return undefined;
   });
 
-  if (!target) return null;
-  const t: DropTarget = target;
+  if (targets.length === 0) return null;
+
+  // Pick a primary target: first destructive (block) variant if any,
+  // otherwise the first INDEX. The remaining targets are still surfaced
+  // in the detail so a multi-statement script doesn't look like only
+  // one statement was reviewed.
+  const firstDestructive = targets.find((x) => x.kind !== 'INDEX');
+  const t: DropTarget = firstDestructive ?? (targets[0] as DropTarget);
+  const totalCount = targets.length;
+  const otherTargets = targets.filter((x) => x !== t);
 
   // DROP INDEX is the only soft case — operators sometimes drop
   // indexes intentionally during maintenance.
   if (t.kind === 'INDEX') {
+    const countSuffix = totalCount > 1 ? ` × ${totalCount}` : '';
+    const additional = formatAdditional(otherTargets);
     const result: Catch = {
       code: 'SQL-013',
-      title: 'DROP INDEX',
+      title: `DROP INDEX${countSuffix}`,
       severity: 'warn',
       confidence: 85,
       detail:
@@ -135,7 +153,8 @@ export const SQL_013: Rule = (ast) => {
         `sometimes legitimate maintenance, but more often they are ` +
         `agent-generated mistakes that silently degrade query ` +
         `performance — Postgres does not warn when an indexed ` +
-        `predicate falls back to a sequential scan.`,
+        `predicate falls back to a sequential scan.` +
+        additional,
       fix:
         `Verify the drop is intended. If you're replacing an index, ` +
         `consider CREATE INDEX CONCURRENTLY for the replacement ` +
@@ -152,16 +171,19 @@ export const SQL_013: Rule = (ast) => {
   const cascadeNote = t.cascade
     ? ' Combined with CASCADE, this also drops every dependent object (foreign keys, views, functions) without further prompting.'
     : '';
+  const countSuffix = totalCount > 1 ? ` × ${totalCount}` : '';
+  const additional = formatAdditional(otherTargets);
   const result: Catch = {
     code: 'SQL-013',
-    title: titleFor(t.kind),
+    title: `${titleFor(t.kind)}${countSuffix}`,
     severity: 'block',
     confidence: 99,
     detail:
       `${verb} on [${formatNames(t.names)}] is irreversible.${cascadeNote} ` +
       `In an AI-agent context this is essentially never the intended ` +
       `operation — the agent's plan almost certainly meant to remove ` +
-      `specific rows, not the entire object.`,
+      `specific rows, not the entire object.` +
+      additional,
     fix:
       `Verify the destruction is intended and use a migration tool ` +
       `with a confirmation step. Consider RENAME TABLE ... TO ` +
@@ -205,6 +227,22 @@ function titleFor(kind: DropTarget['kind']): string {
 
 function formatNames(names: readonly string[]): string {
   return names.length > 0 ? names.join(', ') : '<unknown>';
+}
+
+/**
+ * When a multi-statement script contains more than one destructive
+ * DDL, append a "Additional destructive statements" footer to the
+ * detail so the developer sees every statement, not just the first.
+ */
+function formatAdditional(others: readonly DropTarget[]): string {
+  if (others.length === 0) return '';
+  const lines = others.map(
+    (o) => `  - ${describeKind(o.kind)} [${formatNames(o.names)}]`,
+  );
+  return (
+    `\n\nAdditional destructive statements in this script ` +
+    `(${others.length}):\n${lines.join('\n')}`
+  );
 }
 
 /**
