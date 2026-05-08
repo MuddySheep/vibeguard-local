@@ -1,0 +1,107 @@
+{
+  "name": "@vibeguard-dev/local",
+  "version": "1.0.2",
+  "description": "Static SQL safety analysis for AI agents — catch dangerous queries before they reach your database.",
+  "keywords": [
+    "sql",
+    "postgres",
+    "static-analysis",
+    "ai-agent",
+    "lint",
+    "security",
+    "vibeguard"
+  ],
+  "homepage": "https://github.com/MuddySheep/vibeguard-local#readme",
+  "bugs": {
+    "url": "https://github.com/MuddySheep/vibeguard-local/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MuddySheep/vibeguard-local.git"
+  },
+  "license": "Apache-2.0",
+  "author": "MuddySheep (https://github.com/MuddySheep)",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "size": "size-limit",
+    "bench": "tsx benchmarks/bench.ts",
+    "bench:update-baseline": "tsx benchmarks/bench.ts --update-baseline",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm run test && npm run build && npm run size"
+  },
+  "peerDependencies": {
+    "libpg-query": "^17.0.0"
+  },
+  "peerDependenciesMeta": {
+    "libpg-query": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vitest/coverage-v8": "^1.4.0",
+    "eslint": "^8.57.0",
+    "libpg-query": "^17.0.0",
+    "size-limit": "^11.1.0",
+    "@size-limit/preset-small-lib": "^11.1.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "size-limit": [
+    {
+      "name": "dist/index.js (ESM, gzip)",
+      "path": "dist/index.js",
+      "limit": "30 KB",
+      "gzip": true,
+      "ignore": [
+        "libpg-query",
+        "module",
+        "node:module"
+      ]
+    },
+    {
+      "name": "dist/index.cjs (CJS, min)",
+      "path": "dist/index.cjs",
+      "limit": "100 KB",
+      "ignore": [
+        "libpg-query",
+        "module",
+        "node:module"
+      ]
+    }
+  ]
+}

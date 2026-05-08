@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Build output
 dist/
@@ -19,15 +20,15 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+pnpm-debug.log*
 
 # Environment
 .env
 .env.local
 
-# Lockfiles — keep one, ignore others
-# (we'll use package-lock.json since the SDK is npm-published)
+# Lockfiles we don't use (pnpm-lock.yaml IS tracked at the workspace root)
+package-lock.json
 yarn.lock
-pnpm-lock.yaml
 bun.lockb
 
 # Build artifacts that should never be committed
@@ -36,6 +37,7 @@ bun.lockb
 
 # Bench per-run results (baseline.json IS tracked; per-run results are noise)
 benchmarks/results/
+**/benchmarks/results/
 
 # Local planning / workflow notes — kept on the maintainer's machine,
 # not part of the public repo. (The shipped artifacts the planning
@@ -44,3 +46,6 @@ benchmarks/results/
 docs/EPIC-WORKFLOW.md
 docs/epics/
 docs/stories/
+**/docs/EPIC-WORKFLOW.md
+**/docs/epics/
+**/docs/stories/

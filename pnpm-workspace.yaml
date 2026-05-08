@@ -1,0 +1,27 @@
+# pnpm workspace configuration for the vibeguard-local monorepo.
+#
+# This is the source of truth for which packages participate in the
+# workspace's symlinked install. Two top-level globs:
+#
+#   packages/* — published npm packages (sdk, eslint-plugin, ui, …).
+#                Each one has its own package.json and ships independently.
+#
+#   apps/*     — non-published applications (playground, …).
+#                These consume workspace packages but don't publish.
+#
+# Examples under packages/sdk/examples/ are deliberately NOT in the
+# workspace; they install via `npm install` to demonstrate the realistic
+# consumer experience. The glob `packages/*` matches `packages/sdk` only,
+# not `packages/sdk/examples/<name>`.
+
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+# Native build scripts that pnpm is allowed to run on install.
+# esbuild ships a native binary built via a postinstall; tsup
+# (build) and vitest (test) both depend on it. Without this list,
+# pnpm@10 silently skips the postinstall and downstream commands
+# fail with "esbuild not found" or similar.
+onlyBuiltDependencies:
+  - esbuild
