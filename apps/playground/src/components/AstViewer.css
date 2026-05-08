@@ -1,0 +1,87 @@
+.vg-ast {
+  border: 1px solid var(--vg-line-2);
+  border-radius: var(--vg-r-md);
+  background: var(--vg-bg-1);
+  overflow: hidden;
+  font-family: var(--vg-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.vg-ast__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--vg-line);
+  background: var(--vg-hi);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10.5px;
+}
+
+.vg-ast__title {
+  color: var(--vg-ink);
+  font-weight: 600;
+}
+
+.vg-ast__stat {
+  color: var(--vg-ink-3);
+}
+
+.vg-ast__body {
+  padding: 10px 14px;
+  max-height: 360px;
+  overflow: auto;
+  color: var(--vg-ink-2);
+}
+
+.vg-ast__row {
+  position: relative;
+}
+
+.vg-ast__toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.vg-ast__toggle:hover .vg-ast__summary em { color: var(--vg-acc); }
+
+.vg-ast__chevron {
+  display: inline-block;
+  width: 1em;
+  color: var(--vg-ink-3);
+}
+
+.vg-ast__key {
+  color: var(--vg-info);
+}
+
+.vg-ast__summary em {
+  font-style: normal;
+  color: var(--vg-ink-3);
+}
+
+.vg-ast__children {
+  border-left: 1px dashed var(--vg-line-2);
+  margin-left: 0.65em;
+  padding-left: 0.85em;
+  margin-top: 2px;
+}
+
+.vg-ast__primitive {
+  color: var(--vg-ink-2);
+}
+
+.vg-ast__string { color: var(--vg-warn); }
+.vg-ast__number { color: var(--vg-info); }
+.vg-ast__bool { color: var(--vg-acc); }
+.vg-ast__null { color: var(--vg-bad); font-style: italic; }

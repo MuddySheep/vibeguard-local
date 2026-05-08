@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#050505" />
+    <meta name="color-scheme" content="dark light" />
+
+    <title>VibeGuard playground — paste SQL, see the catches</title>
+    <meta name="description" content="Try VibeGuard's static SQL safety analyzer in your browser. Paste any query, see the 15-catch verdict, share the result via URL. No data leaves your machine." />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="VibeGuard playground" />
+    <meta property="og:description" content="Paste SQL, see what VibeGuard catches. Runs entirely in your browser via WASM." />
+    <meta property="og:url" content="https://muddysheep.github.io/vibeguard-local/" />
+    <meta property="og:site_name" content="VibeGuard" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="VibeGuard playground" />
+    <meta name="twitter:description" content="Paste SQL, see what VibeGuard catches." />
+
+    <!-- Inline favicon (lime-on-dark dot — matches the brand accent) -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23050505'/><circle cx='16' cy='16' r='6' fill='%23b9ff66'/></svg>" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

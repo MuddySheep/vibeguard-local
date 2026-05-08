@@ -13,6 +13,41 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.5.0] - 2026-05-08
+
+Browser support arrives via a new subpath import. The web playground
+shipping at the same time (`apps/playground` in the workspace) needs
+to run the rule registry against an AST without pulling in the
+SDK's Node-only parser bootstrap.
+
+### Added
+
+- **`@vibeguard-dev/local/rules` subpath export.** A browser-safe
+  subset of the public API:
+  - `runRules`, `RunRulesOptions`
+  - `RULES`, `RULE_REGISTRY`, `RuleEntry`
+  - All public types (`Catch`, `AnalysisResult`, `Severity`,
+    `ThreatCategory`, `Rule`, `Fixer`, `ParseError`)
+
+  Browser consumers feed an externally-parsed AST (e.g. from
+  `libpg-query`'s ESM build) directly to `runRules` and skip the
+  SDK's parser. Same 15 catches; no fork of analysis logic.
+
+  The default `@vibeguard-dev/local` import keeps its existing
+  surface, including `init` / `analyze` / `parseQuery` / `applyFixes`
+  — those still go through `parser.ts` and remain Node-only.
+
+- **Sibling package**:
+  [`@vibeguard-dev/ui@0.1.0`](https://www.npmjs.com/package/@vibeguard-dev/ui)
+  — shared design system (tokens + React components) consumed by
+  the V1.5 playground.
+
+### Migration notes
+
+V1.4 → V1.5 is fully backwards compatible. No existing import path
+changes; no symbols are removed or renamed. The `/rules` subpath is
+purely additive.
+
 ## [1.4.0] - 2026-05-08
 
 Sibling-package release. The SDK itself ships **no surface changes**

@@ -1,0 +1,40 @@
+.vg-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--vg-line-2);
+  background: var(--vg-hi);
+  color: var(--vg-ink-2);
+  transition:
+    color 200ms var(--vg-ease-out),
+    background 200ms var(--vg-ease-out),
+    border-color 200ms var(--vg-ease-out),
+    transform 200ms var(--vg-ease-out);
+}
+
+.vg-theme-toggle:hover {
+  color: var(--vg-acc);
+  border-color: var(--vg-acc);
+  background: color-mix(in oklab, var(--vg-acc) 10%, var(--vg-hi));
+}
+
+.vg-theme-toggle:active {
+  transform: scale(0.95);
+}
+
+.vg-theme-toggle__icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vg-theme-toggle__icon svg {
+  width: 100%;
+  height: 100%;
+}

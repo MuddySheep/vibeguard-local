@@ -1,0 +1,117 @@
+/*
+ * @vibeguard-dev/ui — design tokens.
+ *
+ * Single source of truth for the visual language. Import once at
+ * the root of your app:
+ *
+ *   import '@vibeguard-dev/ui/tokens.css';
+ *
+ * Then any element gets the dark theme by default. Add
+ * `data-theme="light"` to any container to switch its subtree.
+ *
+ * Token naming convention: every custom property is prefixed
+ * `--vg-` so it can coexist with other design systems without
+ * collision.
+ *
+ * Color rationale:
+ *   --vg-acc is the live accent — lime on dark, forest green on
+ *   light. It signals "interactive" / "primary action" / "safe".
+ *   --vg-bad is the block-severity indicator. --vg-warn for warns.
+ *   --vg-info reserved for info severity (often cool blue).
+ */
+
+:root,
+[data-theme='dark'] {
+  /* Backgrounds */
+  --vg-bg: #050505;
+  --vg-bg-1: #0a0a0c;
+  --vg-bg-2: #111114;
+
+  /* Text scale (high → low contrast) */
+  --vg-ink: #f4f4f5;
+  --vg-ink-2: #c4c4c8;
+  --vg-ink-3: #84848c;
+  --vg-ink-4: #4d4d54;
+
+  /* Lines + surface highlights */
+  --vg-line: rgba(255, 255, 255, 0.07);
+  --vg-line-2: rgba(255, 255, 255, 0.10);
+  --vg-line-3: rgba(255, 255, 255, 0.16);
+  --vg-hi: rgba(255, 255, 255, 0.06);
+  --vg-hi-2: rgba(255, 255, 255, 0.10);
+
+  /* Accent (live, primary, safe) */
+  --vg-acc: #b9ff66;
+  --vg-acc-ink: #0a1500;
+  --vg-acc-glow: rgba(185, 255, 102, 0.35);
+
+  /* Severity colors */
+  --vg-bad: #ff6b6b;
+  --vg-bad-glow: rgba(255, 107, 107, 0.35);
+  --vg-warn: #ffd166;
+  --vg-warn-glow: rgba(255, 209, 102, 0.30);
+  --vg-info: #7cc7ff;
+  --vg-info-glow: rgba(124, 199, 255, 0.30);
+
+  /* Mesh orbs (background atmosphere) */
+  --vg-orb-1: rgba(160, 120, 255, 0.22);
+  --vg-orb-2: rgba(120, 200, 255, 0.18);
+  --vg-orb-3: rgba(185, 255, 102, 0.10);
+
+  /* Radii */
+  --vg-r-sm: 12px;
+  --vg-r-md: 20px;
+  --vg-r-lg: 28px;
+
+  /* Easings */
+  --vg-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --vg-ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --vg-ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Type stack */
+  --vg-sans: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', sans-serif;
+  --vg-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+  --vg-serif: 'Instrument Serif', Georgia, serif;
+
+  /* Spacing scale (used by some components; apps typically have their own) */
+  --vg-s-1: 4px;
+  --vg-s-2: 8px;
+  --vg-s-3: 12px;
+  --vg-s-4: 16px;
+  --vg-s-5: 24px;
+  --vg-s-6: 32px;
+  --vg-s-7: 48px;
+  --vg-s-8: 64px;
+}
+
+[data-theme='light'] {
+  --vg-bg: #f5f3ee;
+  --vg-bg-1: #fbfaf6;
+  --vg-bg-2: #ffffff;
+
+  --vg-ink: #0a0a0c;
+  --vg-ink-2: #2a2a30;
+  --vg-ink-3: #5a5a62;
+  --vg-ink-4: #8a8a94;
+
+  --vg-line: rgba(0, 0, 0, 0.06);
+  --vg-line-2: rgba(0, 0, 0, 0.09);
+  --vg-line-3: rgba(0, 0, 0, 0.14);
+  --vg-hi: rgba(0, 0, 0, 0.04);
+  --vg-hi-2: rgba(0, 0, 0, 0.07);
+
+  --vg-acc: #2d6b1f;
+  --vg-acc-ink: #ffffff;
+  --vg-acc-glow: rgba(45, 107, 31, 0.18);
+
+  --vg-bad: #c92a2a;
+  --vg-bad-glow: rgba(201, 42, 42, 0.20);
+  --vg-warn: #b76e00;
+  --vg-warn-glow: rgba(183, 110, 0, 0.20);
+  --vg-info: #1864ab;
+  --vg-info-glow: rgba(24, 100, 171, 0.20);
+
+  --vg-orb-1: rgba(160, 120, 255, 0.10);
+  --vg-orb-2: rgba(120, 200, 255, 0.10);
+  --vg-orb-3: rgba(45, 107, 31, 0.06);
+}

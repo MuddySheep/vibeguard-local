@@ -1,0 +1,23 @@
+.vg-editor {
+  height: 100%;
+  border: 1px solid var(--vg-line-2);
+  border-radius: var(--vg-r-md);
+  background: var(--vg-bg-1);
+  overflow: hidden;
+  transition: border-color 200ms var(--vg-ease-out);
+}
+
+.vg-editor:focus-within {
+  border-color: var(--vg-acc);
+  box-shadow: 0 0 0 1px var(--vg-acc-glow);
+}
+
+.vg-editor > div,
+.vg-editor .cm-editor,
+.vg-editor .cm-scroller {
+  height: 100% !important;
+}
+
+.vg-editor .cm-editor {
+  outline: none;
+}

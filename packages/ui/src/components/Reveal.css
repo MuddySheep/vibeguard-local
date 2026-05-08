@@ -1,0 +1,26 @@
+.vg-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  filter: blur(6px);
+  transition:
+    opacity 800ms var(--vg-ease-out),
+    transform 800ms var(--vg-ease-out),
+    filter 800ms var(--vg-ease-out);
+  will-change: transform, opacity;
+}
+
+.vg-reveal.in {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+/* Respect reduced-motion preference: skip the animation */
+@media (prefers-reduced-motion: reduce) {
+  .vg-reveal {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
+  }
+}

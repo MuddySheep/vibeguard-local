@@ -1,0 +1,11 @@
+.vg-mesh {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(60vw 50vh at 15% 20%, var(--vg-orb-1), transparent 60%),
+    radial-gradient(50vw 45vh at 85% 12%, var(--vg-orb-2), transparent 60%),
+    radial-gradient(70vw 55vh at 50% 90%, var(--vg-orb-3), transparent 60%);
+  filter: saturate(1.15);
+}

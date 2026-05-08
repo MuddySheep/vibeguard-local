@@ -41,7 +41,7 @@ export default defineConfig([
   // 1. Library
   {
     ...baseConfig,
-    entry: ['src/index.ts'],
+    entry: ['src/index.ts', 'src/rules-export.ts'],
     format: ['esm', 'cjs'],
     dts: true,
     sourcemap: true,

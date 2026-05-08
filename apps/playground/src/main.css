@@ -1,0 +1,15 @@
+/*
+ * Playground-only global styles (font hosting, html/body sizing).
+ * Imported once from main.tsx.
+ */
+
+/* Geist + Geist Mono via CDN. Self-hosting can come later. */
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Geist:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap');
+
+html, body, #root {
+  height: 100%;
+}
+
+#root {
+  display: block;
+}

@@ -1,0 +1,72 @@
+# Playground deploy.
+#
+# Builds apps/playground and publishes the static output to the
+# `gh-pages` branch on every push to `main` that touches the
+# playground or its workspace dependencies.
+#
+# One-time setup: Settings → Pages → Source: GitHub Actions.
+name: playground-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/playground/**'
+      - 'packages/sdk/**'
+      - 'packages/ui/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/playground-deploy.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'playground-deploy'
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 10.28.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages/sdk
+        run: pnpm --filter @vibeguard-dev/local build
+
+      - name: Build packages/ui
+        run: pnpm --filter @vibeguard-dev/ui build
+
+      - name: Build playground
+        run: pnpm --filter @vibeguard-dev/playground build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/playground/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

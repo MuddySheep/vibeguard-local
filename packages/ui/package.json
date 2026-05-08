@@ -1,0 +1,79 @@
+{
+  "name": "@vibeguard-dev/ui",
+  "version": "0.1.0",
+  "description": "Shared design system for VibeGuard surfaces — tokens + React components used by the OSS playground (and optionally the dashboard).",
+  "keywords": [
+    "react",
+    "design-system",
+    "components",
+    "vibeguard"
+  ],
+  "homepage": "https://github.com/MuddySheep/vibeguard-local#readme",
+  "bugs": {
+    "url": "https://github.com/MuddySheep/vibeguard-local/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MuddySheep/vibeguard-local.git",
+    "directory": "packages/ui"
+  },
+  "license": "Apache-2.0",
+  "author": "MuddySheep (https://github.com/MuddySheep)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/index.css",
+    "./tokens.css": "./src/tokens.css",
+    "./global.css": "./src/global.css",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "**/*.css",
+    "./dist/index.js"
+  ],
+  "files": [
+    "dist",
+    "src/tokens.css",
+    "src/global.css",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "react": "^18.2.0 || ^19.0.0",
+    "react-dom": "^18.2.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.0",
+    "@testing-library/react": "^14.2.0",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "happy-dom": "^14.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
