@@ -1,0 +1,71 @@
+{
+  "name": "eslint-plugin-vibeguard",
+  "version": "1.0.0",
+  "description": "ESLint plugin: VibeGuard SQL safety analysis on tagged template literals and matching call expressions.",
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "eslint-plugin",
+    "sql",
+    "postgres",
+    "static-analysis",
+    "ai-agent",
+    "vibeguard"
+  ],
+  "homepage": "https://github.com/MuddySheep/vibeguard-local#readme",
+  "bugs": {
+    "url": "https://github.com/MuddySheep/vibeguard-local/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MuddySheep/vibeguard-local.git",
+    "directory": "packages/eslint-plugin"
+  },
+  "license": "Apache-2.0",
+  "author": "MuddySheep (https://github.com/MuddySheep)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@vibeguard-dev/local": "workspace:^"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0",
+    "libpg-query": "^17.0.0"
+  },
+  "devDependencies": {
+    "@types/estree": "^1.0.5",
+    "@types/node": "^20.11.0",
+    "eslint": "^9.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

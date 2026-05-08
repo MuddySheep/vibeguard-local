@@ -159,6 +159,10 @@ SDK into a common AI tool's pre-execution flow:
 - **Cursor** — see [`examples/cursor/`](./examples/cursor/)
 - **Replit Agent** — see [`examples/replit-agent/`](./examples/replit-agent/)
 
+For in-editor feedback on `` sql`...` `` template literals (with
+`--fix` autofix), see the sibling package
+[`eslint-plugin-vibeguard`](https://www.npmjs.com/package/eslint-plugin-vibeguard).
+
 ## Architecture, in one paragraph
 
 The SDK parses your SQL with `libpg-query`, walks the resulting AST with

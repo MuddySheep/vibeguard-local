@@ -13,6 +13,30 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.4.0] - 2026-05-08
+
+Sibling-package release. The SDK itself ships **no surface changes**
+in this version — `analyze()`, `applyFixes()`, `RULE_REGISTRY`, the
+public types, and the `vg-local` CLI are all byte-identical to V1.3.
+The version bump exists to keep the SDK in lockstep with the new
+sibling package shipping at the same time:
+
+- **[`eslint-plugin-vibeguard@1.0.0`](https://www.npmjs.com/package/eslint-plugin-vibeguard)** —
+  ESLint 9+ plugin that runs the SDK's 15-catch analyzer on tagged
+  template literals (`` sql`...` ``) and configurable call
+  expressions (`db.query(...)`). Reuses the V1.3 `applyFixes()`
+  runner verbatim, so the four rules with fixers (SQL-001, SQL-005,
+  SQL-006, SQL-011) are autofixable in-editor through `--fix`.
+
+The plugin lives at `packages/eslint-plugin/` in the workspace and
+declares `@vibeguard-dev/local` as a dependency.
+
+### Migration notes
+
+V1.3 → V1.4 is a no-op for SDK consumers. Upgrade only if you also
+plan to install the new ESLint plugin and want the same SDK version
+your plugin was tested against.
+
 ## [1.3.0] - 2026-05-07
 
 The "ESLint moment" — `--fix` autofix support arrives. Four rules

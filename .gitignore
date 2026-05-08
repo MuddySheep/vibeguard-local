@@ -35,6 +35,9 @@ bun.lockb
 *.tgz
 .tsimp/
 
+# Local smoke-install scratch (kept out of git; recreated each phase)
+.smoke-*/
+
 # Bench per-run results (baseline.json IS tracked; per-run results are noise)
 benchmarks/results/
 **/benchmarks/results/
