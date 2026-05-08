@@ -1,0 +1,156 @@
+// SQL-015 — SELECT * over-fetch.
+//
+// Severity:    info
+// Confidence:  60
+// Threat:      exfiltration, integrity
+// Default:     ON
+//
+// Pattern:
+//   A SelectStmt's projection list contains a `*` — either a bare
+//   `SELECT *` (single A_Star field on a ColumnRef) or a qualified
+//   `SELECT t.*` (String + A_Star sequence).
+//
+//   This includes top-level SELECTs, CTEs, subqueries, and the right-
+//   hand side of UNION / INTERSECT / EXCEPT — anywhere a SelectStmt
+//   appears.
+//
+// Why this rule exists:
+//   AI agents over-use `SELECT *` because they don't know the schema.
+//   That has three concrete costs:
+//
+//     1. Token cost — every column round-trips back to the agent's
+//        context, including columns the agent will never read.
+//     2. PII surface — the projection includes every column in the
+//        table; if any of them are sensitive, the entire row is now
+//        in the agent's context.
+//     3. Schema-change fragility — `SELECT *` quietly returns any new
+//        column the schema gains. The agent's downstream parsing
+//        (`row.email`, `row.created_at`, …) doesn't break, but the
+//        column count and order can drift, breaking ordinal-based
+//        consumers without an error.
+//
+// Why confidence is 60, not higher:
+//   `SELECT *` is sometimes correct — generic admin queries, debug
+//   prompts, "let me see what's in this table" exploratory work.
+//   The 60 confidence reflects "very often a footgun, occasionally
+//   intentional"; consumers who want to enforce a strict no-star
+//   policy can promote this to a `block` in their own policy layer.
+//
+// What this rule deliberately does NOT do:
+//   - Use schema metadata to decide if the projection is wide. The
+//     SDK is schema-blind by design (anything else leaks toward the
+//     cloud product, which DOES have schema). Always-warn at info is
+//     the disciplined choice.
+//   - Distinguish bare `*` from `t.*`. Both are over-fetch shapes.
+//     The catch detail names which form fired so consumers can react
+//     accordingly.
+//
+// What this rule deliberately treats as NOT a SELECT *:
+//   - `COUNT(*)` and other function-arg star uses. The A_Star inside
+//     `FuncCall.args` is a count-everything aggregate marker, not a
+//     projection over-fetch. Detection only fires at the projection
+//     level (ResTarget → ColumnRef with A_Star).
+//
+// Multi-stmt scripts: fires on the FIRST star projection encountered
+// (registry-order, depth-first traversal).
+
+import { astWalk } from '../ast-walk.js';
+import type { Catch, Rule } from '../types.js';
+
+interface StarProjection {
+  /** True when the projection is qualified, e.g. `t.*`. */
+  readonly qualified: boolean;
+  /** Qualifier name when `qualified` is true (e.g. 't'). */
+  readonly qualifier: string | null;
+}
+
+export const SQL_015: Rule = (ast) => {
+  let target: StarProjection | null = null;
+
+  astWalk(ast, (node, key) => {
+    if (target) return 'stop';
+    if (!node || typeof node !== 'object') return undefined;
+    const obj = node as Record<string, unknown>;
+
+    // Only ResTarget nodes inside a targetList are projection
+    // entries. Skip anything else (the same A_Star inside a FuncCall's
+    // args, e.g. COUNT(*), should not fire).
+    if (!('ResTarget' in obj)) return undefined;
+    if (key !== 'targetList') return undefined;
+
+    const resTarget = obj['ResTarget'] as Record<string, unknown>;
+    const val = resTarget['val'];
+    const star = readStarColumnRef(val);
+    if (star) {
+      target = star;
+      return 'stop';
+    }
+    return undefined;
+  });
+
+  if (!target) return null;
+  const t: StarProjection = target;
+
+  const projection = t.qualified ? `${t.qualifier}.*` : '*';
+  const result: Catch = {
+    code: 'SQL-015',
+    title: t.qualified
+      ? 'SELECT t.* — qualified over-fetch'
+      : 'SELECT * — projection over-fetch',
+    severity: 'info',
+    confidence: 60,
+    detail:
+      `Projection \`${projection}\` returns every column in the source ` +
+      `relation. For an AI agent this has three costs: token spend ` +
+      `on columns the agent never reads, exposure of any sensitive ` +
+      `columns the table happens to carry, and silent breakage when ` +
+      `the schema gains new columns the consumer's parser doesn't ` +
+      `expect.`,
+    fix:
+      `Replace the star with the explicit column list you actually ` +
+      `need, e.g. \`SELECT id, email, created_at FROM users\`. If you ` +
+      `genuinely need every column (one-off admin / debug paths), ` +
+      `keep the star but constrain the result with a tight LIMIT ` +
+      `and consider running it under operator review.`,
+    threatCategories: ['exfiltration', 'integrity'],
+  };
+  return result;
+};
+
+/**
+ * Inspect a ResTarget.val. Returns a StarProjection when the value
+ * is a ColumnRef whose fields end with an A_Star marker (either bare
+ * `*` or `qualifier.*`); returns null otherwise.
+ */
+function readStarColumnRef(val: unknown): StarProjection | null {
+  if (!val || typeof val !== 'object') return null;
+  const v = val as Record<string, unknown>;
+  if (!('ColumnRef' in v)) return null;
+  const cr = v['ColumnRef'] as Record<string, unknown>;
+  const fields = cr['fields'];
+  if (!Array.isArray(fields) || fields.length === 0) return null;
+
+  // The A_Star, if present, is always the LAST field.
+  // - bare *: [{ A_Star: {} }]
+  // - t.*  : [{ String: { sval: 't' } }, { A_Star: {} }]
+  const last = fields[fields.length - 1];
+  if (!last || typeof last !== 'object') return null;
+  const lastObj = last as Record<string, unknown>;
+  if (!('A_Star' in lastObj)) return null;
+
+  if (fields.length === 1) {
+    return { qualified: false, qualifier: null };
+  }
+
+  const first = fields[0];
+  const qualifier = readStringSval(first);
+  return { qualified: true, qualifier };
+}
+
+function readStringSval(node: unknown): string | null {
+  if (!node || typeof node !== 'object') return null;
+  const n = node as Record<string, unknown>;
+  if (!('String' in n)) return null;
+  const s = n['String'] as Record<string, unknown>;
+  return typeof s['sval'] === 'string' ? s['sval'] : null;
+}

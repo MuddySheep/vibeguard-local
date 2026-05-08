@@ -13,6 +13,79 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.1.0] - 2026-05-07
+
+Three new catches plus the per-rule override mechanism that supports
+default-OFF rules. Headline jumps from 12 catches to 15.
+
+### Added
+
+- **`SQL-013` — Destructive DDL.** Catches `DROP TABLE`, `DROP DATABASE`,
+  `DROP SCHEMA` (with or without `CASCADE`), and `TRUNCATE` at
+  `block` severity / confidence 99. Catches `DROP INDEX` at the
+  softer `warn` / 85 because index drops are routinely-legitimate
+  schema maintenance. Distinct from SQL-003 (DML); DDL has no
+  `WHERE` clause possibility, so the verdict is unambiguous.
+- **`SQL-014` — INSERT / UPDATE / DELETE without RETURNING.** Fires
+  at `info` / confidence 50 when a write statement omits a
+  `RETURNING` clause. **Default OFF** — opt in via the new
+  `AnalyzeOptions.rules` option. Most useful when an agent's
+  prompts ask for the affected row back ("create a user and tell
+  me the new id").
+- **`SQL-015` — `SELECT *` over-fetch.** Catches bare `SELECT *` and
+  qualified `SELECT t.*` projections (in top-level SELECTs, CTEs,
+  subqueries, and the right side of UNION / INTERSECT / EXCEPT) at
+  `info` / confidence 60. Schema-blind by design — does not use
+  schema metadata to refine the verdict (that lives in the cloud
+  product). Default ON. Function-argument stars (`COUNT(*)` and
+  similar aggregates) are deliberately NOT caught.
+- **`AnalyzeOptions.rules` — per-rule enable / disable.** New
+  optional field on the `analyze()` options bag. Use to opt in to
+  default-OFF rules or to disable default-ON rules for a single
+  call. Match is case-insensitive on catch codes:
+  ```ts
+  analyze(sql, { rules: { 'sql-014': { enabled: true } } });
+  analyze(sql, { rules: { 'sql-007': { enabled: false } } });
+  ```
+- **`RULE_REGISTRY` — metadata-bearing rule registry.** New top-level
+  export. Each entry has `{ code, rule, defaultEnabled }`. Use to
+  enumerate every rule the SDK ships, including default-OFF ones.
+  The pre-existing `RULES` export remains and contains the
+  default-enabled subset in registry order — backwards compatible
+  with V1.0 advanced consumers using `runRules(ast, RULES)`.
+- **`RuleEntry` type.** Public type for `RULE_REGISTRY` entries.
+- Three new docs pages:
+  [`docs/rules/sql-013.md`](./docs/rules/sql-013.md),
+  [`docs/rules/sql-014.md`](./docs/rules/sql-014.md),
+  [`docs/rules/sql-015.md`](./docs/rules/sql-015.md).
+
+### Changed
+
+- **`RULES.length` is now 14, was 12.** SQL-013 and SQL-015 are
+  default-on and joined the registry; SQL-014 is default-off and is
+  in `RULE_REGISTRY` only. Per STABILITY.md this is a minor-version
+  event ("Detection-logic improvements are minor versions"); no
+  consumer code that does `for (const r of RULES) { ... }` breaks.
+- README catch table updated from 12 to 15 rows. New `Default`
+  column makes the OFF state of SQL-014 explicit.
+- Test count: **317 → 416.** +30 SQL-013, +24 SQL-014, +26 SQL-015,
+  +19 for the `AnalyzeOptions.rules` plumbing.
+
+### Migration notes
+
+V1.0 → V1.1 is fully backwards compatible. No public types changed;
+no exports were removed or renamed. The new exports (`RULE_REGISTRY`,
+`RuleEntry`, the `rules` field on `AnalyzeOptions`) are additive.
+
+Customers running the public default path (`analyze(sql)`) will start
+seeing `SQL-013` and `SQL-015` catches on queries that previously
+returned empty `catches` arrays — that is the intended behavior. To
+suppress either rule for a single call, use `options.rules`:
+
+```ts
+analyze(sql, { rules: { 'sql-015': { enabled: false } } });
+```
+
 ## [1.0.2] - 2026-05-06
 
 Documentation patch — README's quickstart now matches what the SDK

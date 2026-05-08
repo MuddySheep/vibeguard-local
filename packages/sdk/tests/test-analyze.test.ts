@@ -28,12 +28,14 @@ describe('analyze (public API)', () => {
 
   it('returns empty catches array for safe queries', () => {
     expect(analyze('SELECT 1').catches).toHaveLength(0);
-    expect(analyze('SELECT * FROM users').catches).toHaveLength(0);
+    // V1.1: explicit columns required, since `SELECT *` now fires SQL-015.
+    expect(analyze('SELECT id FROM users').catches).toHaveLength(0);
     expect(analyze('UPDATE u SET x=1 WHERE id=$1').catches).toHaveLength(0);
   });
 
   it('fires SQL-001 on cartesian SELECT', () => {
-    const r = analyze('SELECT * FROM a, b');
+    // Explicit columns to avoid SQL-015 (SELECT *) firing alongside.
+    const r = analyze('SELECT a.id, b.id FROM a, b');
     expect(r.catches).toHaveLength(1);
     expect(r.catches[0]?.code).toBe('SQL-001');
     expect(r.catches[0]?.severity).toBe('block');
@@ -113,8 +115,9 @@ describe('exports — type and value surface', () => {
     }
   });
 
-  it('RULES contains SQL-001 (the only Week-1 rule)', () => {
-    const r = parseQuery('SELECT * FROM a, b');
+  it('RULES contains SQL-001 — registry wiring spot-check', () => {
+    // Explicit columns isolate SQL-001 from the SQL-015 (SELECT *) signal.
+    const r = parseQuery('SELECT a.id, b.id FROM a, b');
     const fired = RULES.map((rule) => rule(r.ast)).filter((c) => c !== null);
     expect(fired).toHaveLength(1);
     expect(fired[0]?.code).toBe('SQL-001');
@@ -124,11 +127,12 @@ describe('exports — type and value surface', () => {
 describe('end-to-end smoke', () => {
   it('analyze() composes parser + runner + RULES correctly', () => {
     // Reach for both happy and unhappy paths to confirm wiring.
-    const safe = analyze('SELECT * FROM users WHERE id = $1');
+    // Explicit columns to avoid SQL-015 (SELECT *) firing.
+    const safe = analyze('SELECT id FROM users WHERE id = $1');
     expect(safe.catches).toHaveLength(0);
     expect(safe.parseError).toBeUndefined();
 
-    const cartesian = analyze('SELECT * FROM a, b');
+    const cartesian = analyze('SELECT a.id, b.id FROM a, b');
     expect(cartesian.catches).toHaveLength(1);
     expect(cartesian.parseError).toBeUndefined();
 

@@ -14,8 +14,9 @@
 Your AI agent generates a SQL query. Before you run it, `@vibeguard-dev/local`
 checks the query's structure for known footguns: missing `WHERE` clauses,
 cartesian explosions, type-coercion bugs, recursive CTEs that don't
-terminate. **12 senior-DBA-level checks**, all static, sub-millisecond,
-zero network calls.
+terminate, irreversible `DROP` / `TRUNCATE`, over-fetching projections.
+**15 senior-DBA-level checks**, all static, sub-millisecond, zero network
+calls.
 
 ## Quickstart
 
@@ -80,29 +81,50 @@ For those, you want **VibeGuard Cloud** — the wire-protocol proxy and MCP
 server this SDK is the static-analysis layer of. Use the SDK locally; use
 the cloud in production. The two are designed to work together.
 
-## The 12 catches
+## The 15 catches
 
 Each catch has a stable code (e.g. `SQL-001`), a severity, a confidence
 range, and links to a docs page with examples and references. **Catch IDs
 are forever-stable** — once published, an ID always means the same thing
 (see [STABILITY.md](./STABILITY.md)).
 
-| Code | Title | Severity | Confidence | Status |
-|---|---|---|---|---|
-| [`SQL-001`](./docs/rules/sql-001.md) | Cartesian explosion | block | 90–95 | ✅ shipped |
-| [`SQL-002`](./docs/rules/sql-002.md) | Self-join footgun | warn | 70–85 | ✅ shipped |
-| [`SQL-003`](./docs/rules/sql-003.md) | Unbounded UPDATE / DELETE | block | 95–99 | ✅ shipped |
-| [`SQL-004`](./docs/rules/sql-004.md) | Implicit type coercion in WHERE | warn | 75–85 | ✅ shipped |
-| [`SQL-005`](./docs/rules/sql-005.md) | NULL comparison footgun | warn | 90–95 | ✅ shipped |
-| [`SQL-006`](./docs/rules/sql-006.md) | OFFSET without ORDER BY | warn | 85–95 | ✅ shipped |
-| [`SQL-007`](./docs/rules/sql-007.md) | NOT IN with nullable subquery | warn | 75–85 | ✅ shipped |
-| [`SQL-008`](./docs/rules/sql-008.md) | String-concat injection patterns | block | 80–95 | ✅ shipped |
-| [`SQL-009`](./docs/rules/sql-009.md) | DISTINCT without obvious reduction | info | 60–75 | ✅ shipped |
-| [`SQL-010`](./docs/rules/sql-010.md) | Correlated subquery in SELECT | warn | 70–85 | ✅ shipped |
-| [`SQL-011`](./docs/rules/sql-011.md) | Aggregate without GROUP BY | warn | 85–95 | ✅ shipped |
-| [`SQL-012`](./docs/rules/sql-012.md) | Recursive CTE without termination | block | 80–95 | ✅ shipped |
+| Code | Title | Severity | Confidence | Default | Status |
+|---|---|---|---|---|---|
+| [`SQL-001`](./docs/rules/sql-001.md) | Cartesian explosion | block | 90–95 | ON | ✅ shipped |
+| [`SQL-002`](./docs/rules/sql-002.md) | Self-join footgun | warn | 70–85 | ON | ✅ shipped |
+| [`SQL-003`](./docs/rules/sql-003.md) | Unbounded UPDATE / DELETE | block | 95–99 | ON | ✅ shipped |
+| [`SQL-004`](./docs/rules/sql-004.md) | Implicit type coercion in WHERE | warn | 75–85 | ON | ✅ shipped |
+| [`SQL-005`](./docs/rules/sql-005.md) | NULL comparison footgun | warn | 90–95 | ON | ✅ shipped |
+| [`SQL-006`](./docs/rules/sql-006.md) | OFFSET without ORDER BY | warn | 85–95 | ON | ✅ shipped |
+| [`SQL-007`](./docs/rules/sql-007.md) | NOT IN with nullable subquery | warn | 75–85 | ON | ✅ shipped |
+| [`SQL-008`](./docs/rules/sql-008.md) | String-concat injection patterns | block | 80–95 | ON | ✅ shipped |
+| [`SQL-009`](./docs/rules/sql-009.md) | DISTINCT without obvious reduction | info | 60–75 | ON | ✅ shipped |
+| [`SQL-010`](./docs/rules/sql-010.md) | Correlated subquery in SELECT | warn | 70–85 | ON | ✅ shipped |
+| [`SQL-011`](./docs/rules/sql-011.md) | Aggregate without GROUP BY | warn | 85–95 | ON | ✅ shipped |
+| [`SQL-012`](./docs/rules/sql-012.md) | Recursive CTE without termination | block | 80–95 | ON | ✅ shipped |
+| [`SQL-013`](./docs/rules/sql-013.md) | DROP / TRUNCATE / DDL destruction | block / warn | 85–99 | ON | ✅ shipped (1.1.0) |
+| [`SQL-014`](./docs/rules/sql-014.md) | INSERT/UPDATE/DELETE without RETURNING | info | 50 | **OFF** (opt-in) | ✅ shipped (1.1.0) |
+| [`SQL-015`](./docs/rules/sql-015.md) | `SELECT *` over-fetch | info | 60 | ON | ✅ shipped (1.1.0) |
 
 See [ROADMAP.md](./ROADMAP.md) for what's in / out of scope.
+
+### Per-rule overrides
+
+Opt in to default-OFF rules, or disable default-ON rules for a single
+call, via the `rules` option. The key is the rule's catch code
+(case-insensitive):
+
+```ts
+// Opt in to SQL-014 (missing RETURNING)
+const result = analyze(sql, {
+  rules: { 'sql-014': { enabled: true } },
+});
+
+// Disable SQL-007 for one call
+const result = analyze(sql, {
+  rules: { 'sql-007': { enabled: false } },
+});
+```
 
 ## Use with...
 
