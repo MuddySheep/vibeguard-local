@@ -109,6 +109,53 @@ describe('SQL-011 — does not fire on safe shapes', () => {
       ),
     ).toBeNull();
   });
+
+  it('does not fire when the aggregate lives only in a scalar subquery', () => {
+    // Discovered via the V1.5 playground (SQL-010 sample). The outer
+    // query has a naked column `u.id` and a scalar subquery
+    // containing count(*). Aggregate scope is per-query — Postgres
+    // does NOT reject this — so SQL-011 must not fire.
+    expect(
+      fire(
+        `SELECT u.id,
+                (SELECT count(*) FROM orders o WHERE o.user_id = u.id) AS n
+         FROM users u`,
+      ),
+    ).toBeNull();
+  });
+
+  it('does not fire on naked outer column + scalar subquery returning a column', () => {
+    // Symmetric to the above: subquery returns a column, outer has
+    // a naked column. No outer aggregate at all, so SQL-011 should
+    // remain silent — the inner SELECT lives in its own scope.
+    expect(
+      fire(
+        'SELECT id, (SELECT max(x) FROM t) FROM users',
+      ),
+    ).toBeNull();
+  });
+
+  it('does not fire on naked outer column + EXISTS subquery containing count(*)', () => {
+    // EXISTS and IN subqueries are also SubLinks; same scope story.
+    expect(
+      fire(
+        `SELECT id FROM users u
+         WHERE EXISTS (SELECT count(*) FROM orders o WHERE o.user_id = u.id)`,
+      ),
+    ).toBeNull();
+  });
+
+  it('does not fire when an outer FuncCall arg wraps a scalar subquery with count(*)', () => {
+    // coalesce(...) is not an aggregate; the count(*) lives inside
+    // a SubLink inside coalesce's arg. Visit must still stop at the
+    // SubLink boundary regardless of how many non-aggregate
+    // FuncCalls wrap it.
+    expect(
+      fire(
+        `SELECT id, coalesce((SELECT count(*) FROM orders), 0) FROM users`,
+      ),
+    ).toBeNull();
+  });
 });
 
 // ----------------------------------------------------------------------

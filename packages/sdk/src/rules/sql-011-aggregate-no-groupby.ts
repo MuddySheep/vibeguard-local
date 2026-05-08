@@ -108,6 +108,22 @@ export const SQL_011: Rule = (ast) => {
     if (!node || typeof node !== 'object') return;
     const obj = node as Record<string, unknown>;
 
+    // STOP at subquery boundaries.
+    //
+    // GROUP BY / aggregate validity is a per-query-level rule. A
+    // scalar / EXISTS / IN subquery in the outer projection has its
+    // own SELECT scope; whatever aggregates and column refs live
+    // inside don't affect whether the OUTER query needs a GROUP BY.
+    //
+    // Without this stop, an outer query like:
+    //   SELECT u.id, (SELECT count(*) FROM orders ...) FROM users u
+    // would falsely "borrow" the inner count(*) as the outer's
+    // aggregate, making u.id look like a naked-with-aggregate
+    // violation. Postgres doesn't reject this at runtime, so we
+    // shouldn't either. (Caught while reviewing the V1.5 playground
+    // — the SQL-010 sample triggered SQL-011 spuriously.)
+    if ('SubLink' in obj) return;
+
     if ('ColumnRef' in obj) {
       if (!insideAggOrWindow) {
         hasNakedColumn = true;
