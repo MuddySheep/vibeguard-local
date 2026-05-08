@@ -176,3 +176,97 @@ describe('SQL-001 — output stability', () => {
     expect(c?.fix.length).toBeGreaterThan(20);
   });
 });
+
+// ----------------------------------------------------------------------
+// V1.5 — UPDATE … FROM and DELETE … USING coverage
+//
+// Discovered via the V1.5 playground stress test:
+//   UPDATE transactions t1 SET status='flagged'
+//   FROM transactions t2
+//   WHERE t1.amount = '1000' AND t1.id NOT IN (...);
+//
+// Postgres logically evaluates `t1 × t2` and only then filters by
+// the WHERE clause. Without a cross-table predicate (t1.x = t2.y),
+// every t1 row materializes once per t2 row — same cartesian-shape
+// risk as `SELECT FROM a, b`. SQL-001 originally only walked
+// SelectStmt; coverage now extended to UpdateStmt and DeleteStmt.
+// ----------------------------------------------------------------------
+
+describe('SQL-001 — UPDATE … FROM cartesian coverage', () => {
+  it('fires on UPDATE … FROM with no cross-table predicate', () => {
+    const c = fire(
+      `UPDATE transactions t1
+       SET status = 'flagged'
+       FROM transactions t2
+       WHERE t1.amount = '1000'`,
+    );
+    expect(c?.code).toBe('SQL-001');
+    expect(c?.severity).toBe('block');
+    expect(c?.detail).toMatch(/UPDATE/);
+  });
+
+  it('fires on UPDATE with two distinct FROM tables and no cross-predicate', () => {
+    const c = fire(
+      `UPDATE accounts a
+       SET balance = 0
+       FROM users u, billing b
+       WHERE a.id = 1`,
+    );
+    expect(c?.code).toBe('SQL-001');
+  });
+
+  it('does NOT fire on UPDATE with a cross-table WHERE predicate', () => {
+    expect(
+      fire(
+        `UPDATE transactions t1
+         SET status = 'paid'
+         FROM payments p
+         WHERE t1.payment_id = p.id`,
+      ),
+    ).toBeNull();
+  });
+
+  it('does NOT fire on UPDATE with explicit JOIN in fromClause', () => {
+    // (UPDATE … FROM allows explicit JOINs; same suppression rule)
+    expect(
+      fire(
+        `UPDATE accounts a
+         SET balance = 0
+         FROM users u JOIN billing b ON b.user_id = u.id
+         WHERE a.user_id = u.id`,
+      ),
+    ).toBeNull();
+  });
+
+  it('does NOT fire on plain UPDATE with single target relation', () => {
+    expect(
+      fire("UPDATE users SET email = 'rotated@example.com' WHERE id = 1"),
+    ).toBeNull();
+  });
+});
+
+describe('SQL-001 — DELETE … USING cartesian coverage', () => {
+  it('fires on DELETE … USING with no cross-table predicate', () => {
+    const c = fire(
+      `DELETE FROM transactions t1
+       USING transactions t2
+       WHERE t1.amount = 1000`,
+    );
+    expect(c?.code).toBe('SQL-001');
+    expect(c?.detail).toMatch(/DELETE/);
+  });
+
+  it('does NOT fire on DELETE … USING with a cross-table WHERE predicate', () => {
+    expect(
+      fire(
+        `DELETE FROM transactions t1
+         USING payments p
+         WHERE t1.payment_id = p.id AND p.refunded = TRUE`,
+      ),
+    ).toBeNull();
+  });
+
+  it('does NOT fire on plain DELETE with single target relation', () => {
+    expect(fire('DELETE FROM users WHERE id = 1')).toBeNull();
+  });
+});

@@ -189,3 +189,75 @@ describe('SQL-002 — output stability', () => {
     expect(c?.fix.length).toBeGreaterThan(20);
   });
 });
+
+// ----------------------------------------------------------------------
+// V1.5 — UPDATE … FROM and DELETE … USING self-join coverage
+//
+// Discovered via the V1.5 playground stress test. The shape:
+//
+//   UPDATE transactions t1
+//   SET status='flagged'
+//   FROM transactions t2
+//   WHERE t1.amount = '1000' AND t1.id NOT IN (...);
+//
+// Aliases t1 and t2 both reference `transactions` but no predicate
+// connects them via DIFFERENT columns. SQL-002 originally only
+// walked SelectStmt; coverage now extended to UpdateStmt and
+// DeleteStmt.
+// ----------------------------------------------------------------------
+
+describe('SQL-002 — UPDATE … FROM same-table coverage', () => {
+  it('fires on UPDATE t1 FROM t1 with only t1-only predicates', () => {
+    const c = fire(
+      `UPDATE transactions t1
+       SET status = 'flagged'
+       FROM transactions t2
+       WHERE t1.amount = 1000`,
+    );
+    expect(c?.code).toBe('SQL-002');
+    expect(c?.detail).toContain('transactions');
+  });
+
+  it('does NOT fire on UPDATE t1 FROM t1 with a parent/child predicate', () => {
+    expect(
+      fire(
+        `UPDATE nodes parent
+         SET status = 'archived'
+         FROM nodes child
+         WHERE child.parent_id = parent.id`,
+      ),
+    ).toBeNull();
+  });
+
+  it('does NOT fire when target and FROM are different relations', () => {
+    expect(
+      fire(
+        `UPDATE accounts a
+         SET balance = 0
+         FROM users u
+         WHERE a.user_id = u.id`,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('SQL-002 — DELETE … USING same-table coverage', () => {
+  it('fires on DELETE t1 USING t1 with only t1-only predicates', () => {
+    const c = fire(
+      `DELETE FROM transactions t1
+       USING transactions t2
+       WHERE t1.id = 5`,
+    );
+    expect(c?.code).toBe('SQL-002');
+  });
+
+  it('does NOT fire on DELETE t1 USING t1 with a column-distinguishing predicate', () => {
+    expect(
+      fire(
+        `DELETE FROM nodes parent
+         USING nodes child
+         WHERE child.parent_id = parent.id`,
+      ),
+    ).toBeNull();
+  });
+});

@@ -5,8 +5,11 @@
 // Threat:      integrity
 //
 // Pattern (must all hold to fire):
-//   - The first SelectStmt's fromClause references the same base
-//     relation (relname) two or more times — i.e. a self-join
+//   - The first SelectStmt / UpdateStmt / DeleteStmt's effective
+//     from-list references the same base relation (relname) two or
+//     more times — i.e. a self-join. For UPDATE this includes the
+//     target relation + `fromClause`; for DELETE the target +
+//     `usingClause`.
 //   - There is no predicate (ON-clause OR WHERE-clause comparison)
 //     that connects two distinct aliases of that relation via two
 //     DIFFERENT columns
@@ -24,10 +27,16 @@
 // CTE shadowing: a CTE name reused as a base-table reference produces
 // the same AST shape as a base-table self-join. The catch fires
 // regardless. Documented in docs/rules/sql-002.md.
+//
+// V1.5 extension: UPDATE … FROM same_table and DELETE … USING
+// same_table used to slip through because the rule only walked
+// SelectStmt. Same self-join semantics, same risk; the rule now
+// covers all three statement kinds via `findFromBearingStmt`.
 
 import { astWalk } from '../ast-walk.js';
 import { extractFromTables, type FromTable } from '../extract-tables.js';
 import type { Catch, Rule } from '../types.js';
+import { findFromBearingStmt } from './find-stmt.js';
 
 interface ColumnInfo {
   readonly alias: string | null;
@@ -41,24 +50,12 @@ type Classification =
   | 'good';
 
 export const SQL_002: Rule = (ast) => {
-  // Step 1 — find first SelectStmt.
-  let selectStmt: Record<string, unknown> | null = null;
-  astWalk(ast, (node) => {
-    if (selectStmt) return 'stop';
-    if (node && typeof node === 'object' && 'SelectStmt' in node) {
-      selectStmt = (node as { SelectStmt: Record<string, unknown> })
-        .SelectStmt;
-      return 'stop';
-    }
-    return undefined;
-  });
-  if (!selectStmt) return null;
-  const stmt: Record<string, unknown> = selectStmt;
+  // Step 1 — find first SelectStmt / UpdateStmt / DeleteStmt.
+  const shape = findFromBearingStmt(ast);
+  if (!shape) return null;
 
-  const rawFromClause = stmt['fromClause'];
-  if (!Array.isArray(rawFromClause) || rawFromClause.length === 0) {
-    return null;
-  }
+  const rawFromClause = shape.fromClause;
+  if (rawFromClause.length === 0) return null;
 
   // Step 2 — extract tables (top-level FROM only) and group by relname.
   const tables = extractFromTables({ fromClause: rawFromClause });
@@ -78,7 +75,10 @@ export const SQL_002: Rule = (ast) => {
       identifiers.add(t.alias ?? t.name);
     }
 
-    const predicates = collectComparisons(rawFromClause, stmt['whereClause']);
+    const predicates = collectComparisons(
+      rawFromClause,
+      shape.whereClause,
+    );
     let foundGood = false;
     let foundAnyRelevant = false;
     for (const pred of predicates) {

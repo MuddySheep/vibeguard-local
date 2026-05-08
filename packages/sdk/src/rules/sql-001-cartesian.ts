@@ -5,10 +5,13 @@
 // Threat:      denial-of-service
 //
 // Pattern (must all be true to fire):
-//   - The first statement we encounter is a SelectStmt
-//   - Its top-level fromClause references >=2 distinct table-shaped
-//     items (RangeVar / RangeSubselect)
-//   - There is NO JoinExpr anywhere in the fromClause subtree
+//   - The first statement we encounter is a SelectStmt, UpdateStmt,
+//     or DeleteStmt
+//   - Its effective from-list references >=2 distinct table-shaped
+//     items (RangeVar / RangeSubselect). For UPDATE this is the
+//     target relation + `fromClause`; for DELETE it's the target
+//     relation + `usingClause`.
+//   - There is NO JoinExpr anywhere in the from-list subtree
 //     (an explicit JOIN — including `CROSS JOIN`, which Postgres
 //     normalizes to JoinExpr+JOIN_INNER with no quals — counts as
 //     intentional and suppresses)
@@ -20,42 +23,37 @@
 // forgot the join predicate and the database is about to materialize
 // the cartesian product of every table's row count.
 //
+// V1.5 extension: UPDATE … FROM and DELETE … USING used to slip
+// through because the rule only walked SelectStmt. The cartesian
+// shape is identical, so the rule now covers all three statement
+// kinds via the shared `findFromBearingStmt` helper.
+//
 // See docs/rules/sql-001.md for the full pattern explanation.
 
 import { astWalk } from '../ast-walk.js';
 import { extractFromTables, type FromTable } from '../extract-tables.js';
 import { maskStringLiterals } from '../fix-utils.js';
 import type { Catch, Fixer, Rule } from '../types.js';
+import { findFromBearingStmt } from './find-stmt.js';
 
 export const SQL_001: Rule = (ast) => {
-  // Step 1: walk to the FIRST SelectStmt at any depth. Multi-stmt
-  // scripts trigger the rule on whichever SelectStmt comes first.
-  // (UpdateStmt / DeleteStmt don't have a fromClause-with-multiple-
-  // tables shape; nothing to detect there for SQL-001.)
-  let stmt: Record<string, unknown> | null = null;
-  astWalk(ast, (node) => {
-    if (stmt) return 'stop';
-    if (node && typeof node === 'object' && 'SelectStmt' in node) {
-      stmt = (node as { SelectStmt: Record<string, unknown> }).SelectStmt;
-      return 'stop';
-    }
-    return undefined;
-  });
-  if (!stmt) return null;
-  const selectStmt: Record<string, unknown> = stmt;
+  // Step 1: find the first SelectStmt / UpdateStmt / DeleteStmt at
+  // any depth. Multi-stmt scripts trigger on whichever comes first.
+  // For UPDATE/DELETE, the effective from-list includes the target
+  // relation alongside the fromClause / usingClause entries.
+  const shape = findFromBearingStmt(ast);
+  if (!shape) return null;
 
   // Step 2: pull top-level tables. We synthesize a `{ fromClause: ... }`
   // wrapper so extractFromTables fires on the correct key. This keeps
   // the substrate semantics simple (RangeVars are only collected when
   // reached via FROM-shaped property names).
-  const rawFromClause = selectStmt['fromClause'];
-  if (!Array.isArray(rawFromClause) || rawFromClause.length === 0) {
-    return null;
-  }
+  const rawFromClause = shape.fromClause;
+  if (rawFromClause.length === 0) return null;
   const tables = extractFromTables({ fromClause: rawFromClause });
   if (tables.length < 2) return null;
 
-  // Step 3: any JoinExpr anywhere in fromClause means the user said
+  // Step 3: any JoinExpr anywhere in the from-list means the user said
   // something explicit about table relationships — suppress. CROSS JOIN
   // is parsed as JoinExpr with jointype JOIN_INNER and no quals; that
   // counts as "intentional cartesian" and we honor it.
@@ -74,34 +72,77 @@ export const SQL_001: Rule = (ast) => {
   // any A_Expr has two ColumnRefs whose first-field qualifiers differ
   // and both qualifiers identify tables in our FROM set, treat the
   // WHERE as a join predicate and suppress.
-  const whereClause = selectStmt['whereClause'];
+  const whereClause = shape.whereClause;
   if (whereClause && hasCrossTablePredicate(whereClause, tables)) {
     return null;
   }
 
-  // Step 5: fire.
+  // Step 5: fire. Detail prose adapts to the statement kind so the
+  // catch reads naturally for UPDATE-FROM and DELETE-USING.
   const tableNames = tables
     .map((t) => t.alias ?? (t.name === '' ? '<subquery>' : t.name))
     .join(', ');
+
+  const detail = buildDetail(shape, tables.length, tableNames);
+  const fix = buildFix(shape);
 
   const result: Catch = {
     code: 'SQL-001',
     title: 'Cartesian explosion risk',
     severity: 'block',
     confidence: 95,
-    detail:
-      `${tables.length} tables (${tableNames}) appear in FROM without a ` +
-      `JOIN clause or cross-table WHERE predicate. The result row count ` +
-      `is the product of every table's row count, which grows ` +
-      `multiplicatively and can exhaust memory on production-sized data.`,
-    fix:
-      'Add an explicit JOIN ... ON / USING clause that relates the ' +
-      'tables, or add WHERE conditions that connect their rows. If the ' +
-      'cross-product was intentional, use CROSS JOIN explicitly.',
+    detail,
+    fix,
     threatCategories: ['denial-of-service'],
   };
   return result;
 };
+
+function buildDetail(
+  shape: { kind: 'SelectStmt' | 'UpdateStmt' | 'DeleteStmt'; targetRelname: string | null },
+  count: number,
+  tableNames: string,
+): string {
+  if (shape.kind === 'SelectStmt') {
+    return (
+      `${count} tables (${tableNames}) appear in FROM without a ` +
+      `JOIN clause or cross-table WHERE predicate. The result row count ` +
+      `is the product of every table's row count, which grows ` +
+      `multiplicatively and can exhaust memory on production-sized data.`
+    );
+  }
+  const target = shape.targetRelname ?? '<table>';
+  const cluster = shape.kind === 'UpdateStmt' ? 'FROM' : 'USING';
+  const verb = shape.kind === 'UpdateStmt' ? 'UPDATE' : 'DELETE';
+  return (
+    `${verb} on \`${target}\` plus its ${cluster} clause references ` +
+    `${count} tables (${tableNames}) without a JOIN clause or cross-` +
+    `table WHERE predicate. The planner builds the cartesian product ` +
+    `of every relation before applying the WHERE filter — N×M rows ` +
+    `materialize for the write, which can exhaust memory and serialize ` +
+    `the lock on production-sized data.`
+  );
+}
+
+function buildFix(shape: {
+  kind: 'SelectStmt' | 'UpdateStmt' | 'DeleteStmt';
+}): string {
+  if (shape.kind === 'SelectStmt') {
+    return (
+      'Add an explicit JOIN ... ON / USING clause that relates the ' +
+      'tables, or add WHERE conditions that connect their rows. If the ' +
+      'cross-product was intentional, use CROSS JOIN explicitly.'
+    );
+  }
+  const cluster = shape.kind === 'UpdateStmt' ? 'FROM' : 'USING';
+  return (
+    `Add a WHERE predicate that connects the target relation to the ` +
+    `${cluster} relation (e.g. \`t1.parent_id = t2.id\`). If the secondary ` +
+    `relation is unused, remove it from the statement entirely. If the ` +
+    `cartesian was deliberate, the statement is almost certainly wrong — ` +
+    `review with an operator before running.`
+  );
+}
 
 /**
  * Heuristic: does the WHERE clause contain a binary comparison whose
