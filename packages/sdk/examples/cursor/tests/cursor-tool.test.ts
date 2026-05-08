@@ -12,7 +12,9 @@ describe('withVibeGuard', () => {
   it('executes when SQL has no block-severity catches', async () => {
     const exec = vi.fn(async (_sql: string) => ({ rows: [{ id: 1 }] }));
     const guarded = withVibeGuard(exec);
-    const r = await guarded('SELECT * FROM users WHERE id = 1');
+    // Explicit column projection — avoids SQL-015 noise unrelated
+    // to what this test asserts (status / exec invocation).
+    const r = await guarded('SELECT id, email FROM users WHERE id = 1');
     expect(r.status).toBe('executed');
     expect(exec).toHaveBeenCalledOnce();
     if (r.status === 'executed') {
@@ -83,7 +85,7 @@ describe('withVibeGuard', () => {
     const exec = vi.fn(async (_sql: string) => ({ rows: [] }));
     const logger = vi.fn();
     const guarded = withVibeGuard(exec, { logger });
-    await guarded('SELECT * FROM users WHERE id = 1');
+    await guarded('SELECT id, email FROM users WHERE id = 1');
     expect(logger).not.toHaveBeenCalled();
   });
 

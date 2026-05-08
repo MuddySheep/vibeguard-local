@@ -14,7 +14,9 @@ beforeAll(async () => {
 describe('createVibeGuardHook — allowed path', () => {
   it('allows clean SQL with empty feedback', () => {
     const hook = createVibeGuardHook();
-    const r = hook('SELECT * FROM users WHERE id = 1');
+    // Explicit column projection — `SELECT *` would fire SQL-015
+    // (over-fetch) and break the zero-catches assertion.
+    const r = hook('SELECT id, email FROM users WHERE id = 1');
     expect(r.allowed).toBe(true);
     expect(r.catches).toHaveLength(0);
     expect(r.feedback).toBe('');
@@ -30,7 +32,7 @@ describe('createVibeGuardHook — allowed path', () => {
 
   it('echoes the SQL back unchanged', () => {
     const hook = createVibeGuardHook();
-    const sql = 'SELECT * FROM users WHERE id = 42';
+    const sql = 'SELECT id, email FROM users WHERE id = 42';
     const r = hook(sql);
     expect(r.sql).toBe(sql);
   });
