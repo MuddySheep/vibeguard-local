@@ -15,7 +15,6 @@
     "bench": "pnpm --filter @vibeguard-dev/local bench",
     "bench:update-baseline": "pnpm --filter @vibeguard-dev/local bench:update-baseline"
   },
-  "packageManager": "pnpm@10.28.1",
   "engines": {
     "node": ">=18.0.0"
   },

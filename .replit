@@ -1,0 +1,40 @@
+modules = ["nodejs-18", "web"]
+[agent]
+expertMode = true
+stack = "BEST_EFFORT_FALLBACK"
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "COREPACK_ENABLE_STRICT=0 pnpm --filter @vibeguard-dev/playground dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[deployment]
+deploymentTarget = "static"
+build = ["bash", "-c", "COREPACK_ENABLE_STRICT=0 pnpm --filter @vibeguard-dev/local build && COREPACK_ENABLE_STRICT=0 pnpm --filter @vibeguard-dev/ui build && COREPACK_ENABLE_STRICT=0 pnpm --filter @vibeguard-dev/playground build"]
+publicDir = "apps/playground/dist"
