@@ -13,6 +13,68 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.2.0] - 2026-05-07
+
+First-run CLI experience. Adds the `vg-local` binary with `init` and
+`analyze` subcommands. No SDK API surface changes; the `analyze()`
+function and the rule registry behave identically to V1.1.
+
+### Added
+
+- **`vg-local init`** — first-run scaffolder. Creates a
+  `vibeguard.example.sql` file with a deliberate SQL-003 catch, adds
+  an `npm run lint:sql` script to your `package.json`, runs the
+  analyzer on the example, and prints the catch in colored output.
+  Idempotent — re-running detects existing state and leaves it
+  untouched. Smart about missing or malformed `package.json`.
+- **`vg-local analyze <glob>...`** — file-globbing analyzer. Resolves
+  one or more glob patterns to file paths, runs `analyze()` on each,
+  prints catches per file with severity coloring, and exits non-zero
+  if any `block`-severity catch fires. CI-friendly. Glob expansion
+  via `tinyglobby`. Files larger than 5 MB are skipped with a stderr
+  warning. Parse errors per file are reported via stderr without
+  stopping the run.
+- **`vg-local --version` / `-v`** — print the SDK version.
+- **`vg-local --help` / `-h`** — print usage.
+- **`bin: { "vg-local": "./dist/cli/index.js" }`** in `package.json`.
+  Use via `npx @vibeguard-dev/local <subcommand>` or, after install,
+  via `npm run lint:sql` (auto-added by `init`).
+- README Quickstart now leads with the `npx @vibeguard-dev/local init`
+  one-shot path before the programmatic API.
+
+### Changed
+
+- **Build now produces two output trees:** `dist/index.{js,cjs,d.ts,d.cts}`
+  for the library entry (unchanged) and `dist/cli/index.{js,cjs}` for
+  the CLI entry. The library bundle does NOT carry a shebang; the
+  CLI bundle does. tsup config switched to a two-config array to
+  keep the shebang banner scoped to the CLI build only.
+- **New runtime dependencies:** `picocolors@^1.1.1` (~1.5 KB,
+  TTY-aware ANSI coloring) and `tinyglobby@^0.2.10` (~50 KB, glob
+  expansion). Both are widely used in the Vite/tsup/vitest ecosystem;
+  net install footprint impact is small.
+- Test count: **416 → 452.** +13 format, +14 init (incl. idempotency,
+  no-package.json, malformed-package.json), +9 analyze (exit codes,
+  glob expansion, error handling, opt-in plumbing).
+
+### Architecture notes
+
+- `runInit(args, options)` and `runAnalyze(args, options)` accept
+  `cwd` and io streams as parameters (defaulting to `process.cwd()` /
+  `process.stdout` / `process.stderr` at the CLI boundary). Pure
+  inputs make the functions testable from worker threads (where
+  `process.chdir()` isn't allowed) and callable from custom
+  integrations.
+- Arg parsing is hand-rolled. The CLI surface is tiny; the cost of
+  shipping `mri` / `cac` would exceed the cost of the parser.
+
+### Migration notes
+
+V1.1 → V1.2 is fully backwards compatible. The library API surface
+is unchanged. `npm install @vibeguard-dev/local libpg-query`
+installs the new CLI alongside the library; `vg-local` becomes
+available in your project's `node_modules/.bin/`.
+
 ## [1.1.0] - 2026-05-07
 
 Three new catches plus the per-rule override mechanism that supports

@@ -28,6 +28,23 @@ npm install @vibeguard-dev/local libpg-query
 Server-side Node only for the initial release; browser support is
 out of scope for now.
 
+### One-shot CLI
+
+The fastest way to see what the SDK does:
+
+```bash
+npx @vibeguard-dev/local init
+```
+
+That scaffolds an example SQL file, runs the analyzer on it, prints
+the catch with severity and fix, and adds an `npm run lint:sql`
+script to your `package.json` you can wire into CI. For ongoing use:
+
+```bash
+vg-local analyze 'src/**/*.sql'
+# Exits 0 if no block-severity catches; 1 if any. CI-friendly.
+```
+
 ### ESM
 
 ```ts
