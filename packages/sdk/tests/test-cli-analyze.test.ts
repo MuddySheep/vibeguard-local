@@ -172,3 +172,109 @@ describe('runAnalyze — analyzeOptions opt-in', () => {
     expect(stdoutText()).toContain('SQL-014');
   });
 });
+
+// ----------------------------------------------------------------------
+// V1.3 — --fix and --fix-dry-run flag tests
+// ----------------------------------------------------------------------
+
+describe('runAnalyze — --fix-dry-run', () => {
+  it('prints a unified diff for fixable files', async () => {
+    await writeSql('q.sql', 'SELECT * FROM t WHERE x = NULL;\n');
+    const r = await runAnalyze(['q.sql', '--fix-dry-run'], {
+      cwd: tmpDir,
+    });
+    const out = stdoutText();
+    expect(out).toContain('--- q.sql');
+    expect(out).toContain('+++ q.sql');
+    expect(out).toContain('-SELECT * FROM t WHERE x = NULL;');
+    expect(out).toContain('+SELECT * FROM t WHERE x IS NULL;');
+    expect(r.fixesApplied).toBe(1);
+    expect(r.filesFixed).toBe(1);
+  });
+
+  it('does NOT modify files in dry-run mode', async () => {
+    const original = 'SELECT * FROM t WHERE x = NULL;\n';
+    await writeSql('q.sql', original);
+    await runAnalyze(['q.sql', '--fix-dry-run'], { cwd: tmpDir });
+
+    const after = await fs.readFile(path.join(tmpDir, 'q.sql'), 'utf8');
+    expect(after).toBe(original);
+  });
+
+  it('prints "Run with --fix to write changes" footer', async () => {
+    await writeSql('q.sql', 'SELECT * FROM t WHERE x = NULL;\n');
+    await runAnalyze(['q.sql', '--fix-dry-run'], { cwd: tmpDir });
+    const out = stdoutText();
+    expect(out).toContain('would apply');
+    expect(out).toContain('Run with --fix');
+  });
+
+  it('exit code is 0 when only non-block catches remain after fix-dry-run', async () => {
+    await writeSql('q.sql', 'SELECT * FROM t WHERE x = NULL;\n');
+    const r = await runAnalyze(['q.sql', '--fix-dry-run'], {
+      cwd: tmpDir,
+    });
+    // After fix: x IS NULL; only SQL-015 (info, SELECT *) remains.
+    // No block catches → exit 0.
+    expect(r.exitCode).toBe(0);
+  });
+});
+
+describe('runAnalyze — --fix (apply)', () => {
+  it('writes the fixed SQL back to disk', async () => {
+    await writeSql('q.sql', 'SELECT * FROM t WHERE x = NULL;\n');
+    const r = await runAnalyze(['q.sql', '--fix'], { cwd: tmpDir });
+
+    const after = await fs.readFile(path.join(tmpDir, 'q.sql'), 'utf8');
+    expect(after).toContain('IS NULL');
+    expect(after).not.toContain('= NULL');
+    expect(r.fixesApplied).toBe(1);
+  });
+
+  it('reports "fixed <file>" for each modified file', async () => {
+    await writeSql('q.sql', 'SELECT * FROM t WHERE x = NULL;\n');
+    await runAnalyze(['q.sql', '--fix'], { cwd: tmpDir });
+    expect(stdoutText()).toContain('fixed');
+    expect(stdoutText()).toContain('q.sql');
+  });
+
+  it('does not modify files that have no auto-fixable catches', async () => {
+    const original = 'DROP TABLE users;\n';
+    await writeSql('q.sql', original);
+    await runAnalyze(['q.sql', '--fix'], { cwd: tmpDir });
+    const after = await fs.readFile(path.join(tmpDir, 'q.sql'), 'utf8');
+    expect(after).toBe(original);
+  });
+
+  it('applies fixes to multiple files in one run', async () => {
+    await writeSql('a.sql', 'SELECT * FROM t WHERE x = NULL;\n');
+    await writeSql('b.sql', 'SELECT id FROM t LIMIT 10 OFFSET 20;\n');
+    const r = await runAnalyze(['*.sql', '--fix'], { cwd: tmpDir });
+    expect(r.filesFixed).toBe(2);
+    expect(r.fixesApplied).toBe(2);
+
+    const a = await fs.readFile(path.join(tmpDir, 'a.sql'), 'utf8');
+    expect(a).toContain('IS NULL');
+    const b = await fs.readFile(path.join(tmpDir, 'b.sql'), 'utf8');
+    expect(b).toContain('ORDER BY 1');
+  });
+
+  it('exit code is 1 when block catches remain after fix', async () => {
+    // DROP TABLE has no fixer; it remains as a block catch.
+    await writeSql('q.sql', 'DROP TABLE users;\n');
+    const r = await runAnalyze(['q.sql', '--fix'], { cwd: tmpDir });
+    expect(r.exitCode).toBe(1);
+    expect(r.blockCatches).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('runAnalyze — --fix and --fix-dry-run conflict', () => {
+  it('returns exit 2 when both flags are passed', async () => {
+    await writeSql('q.sql', 'SELECT * FROM t WHERE x = NULL;\n');
+    const r = await runAnalyze(['q.sql', '--fix', '--fix-dry-run'], {
+      cwd: tmpDir,
+    });
+    expect(r.exitCode).toBe(2);
+    expect(stderrText()).toContain('mutually exclusive');
+  });
+});

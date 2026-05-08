@@ -27,7 +27,8 @@
 // the aggregate detection step.
 
 import { astWalk } from '../ast-walk.js';
-import type { Catch, Rule } from '../types.js';
+import { maskStringLiterals } from '../fix-utils.js';
+import type { Catch, Fixer, Rule } from '../types.js';
 
 // Public Postgres aggregate functions. Source: PostgreSQL docs on
 // aggregate functions. Built-in aggregates only — user-defined
@@ -206,3 +207,144 @@ function readColumnName(columnRef: unknown): string | null {
   if (f.A_Star) return '*';
   return typeof f.String?.sval === 'string' ? f.String.sval : null;
 }
+
+/**
+ * Read a ColumnRef's full qualified path (`t.name` or just `name`).
+ * Returns null on shapes we don't handle (A_Star projections, nested
+ * indirection, function-call qualifiers).
+ */
+function readQualifiedColumnName(columnRef: unknown): string | null {
+  if (!columnRef || typeof columnRef !== 'object') return null;
+  const cr = columnRef as { fields?: unknown[] };
+  if (!Array.isArray(cr.fields) || cr.fields.length === 0) return null;
+  const parts: string[] = [];
+  for (const field of cr.fields) {
+    if (!field || typeof field !== 'object') return null;
+    const f = field as { String?: { sval?: string }; A_Star?: unknown };
+    if (f.A_Star) return null; // can't GROUP BY a star
+    if (typeof f.String?.sval !== 'string') return null;
+    parts.push(f.String.sval);
+  }
+  return parts.length > 0 ? parts.join('.') : null;
+}
+
+// ---------------------------------------------------------------------
+// SQL-011 autofix
+// ---------------------------------------------------------------------
+
+/**
+ * Add the missing GROUP BY clause naming the first naked column in
+ * the SELECT projection.
+ *
+ *   SELECT t.name, COUNT(*) FROM t
+ *     →  SELECT t.name, COUNT(*) FROM t GROUP BY t.name
+ *
+ *   SELECT name, COUNT(*) FROM t WHERE active
+ *     →  SELECT name, COUNT(*) FROM t WHERE active GROUP BY name
+ *
+ *   SELECT name, COUNT(*) FROM t ORDER BY 2 DESC
+ *     →  SELECT name, COUNT(*) FROM t GROUP BY name ORDER BY 2 DESC
+ *
+ * Insertion point: before the first occurrence of
+ *   HAVING / ORDER BY / LIMIT / OFFSET / FETCH / FOR UPDATE
+ * If none of those keywords are present, append at end-of-statement
+ * (just before any trailing semicolon).
+ *
+ * Fail-soft: returns null when the bare-column shape isn't a simple
+ * qualified identifier (e.g. computed expressions, A_Star, or paths
+ * with array indirection). The catch keeps surfacing unchanged.
+ */
+export const SQL_011_FIX: Fixer = {
+  fix(ast: unknown, sql: string): string | null {
+    if (SQL_011(ast) === null) return null;
+
+    // Re-walk to extract the FIRST naked column's qualified name.
+    let qualifiedColumn: string | null = null;
+    const findVisit = (node: unknown, insideAggOrWindow: boolean): void => {
+      if (qualifiedColumn !== null) return;
+      if (!node || typeof node !== 'object') return;
+      const obj = node as Record<string, unknown>;
+
+      if ('ColumnRef' in obj) {
+        if (!insideAggOrWindow) {
+          qualifiedColumn = readQualifiedColumnName(obj['ColumnRef']);
+        }
+        return;
+      }
+
+      if ('FuncCall' in obj) {
+        const fc = obj['FuncCall'] as FuncCallLike;
+        const isWindow = fc.over !== undefined && fc.over !== null;
+        const fname = readFuncName(fc.funcname);
+        const isAgg =
+          !isWindow && fname !== null && POSTGRES_AGGREGATES.has(fname);
+        const newInside = insideAggOrWindow || isAgg || isWindow;
+        if (Array.isArray(fc.args)) for (const a of fc.args) findVisit(a, newInside);
+        if (fc.over !== undefined) findVisit(fc.over, newInside);
+        if (fc.agg_filter !== undefined) findVisit(fc.agg_filter, newInside);
+        if (Array.isArray(fc.agg_order))
+          for (const o of fc.agg_order) findVisit(o, newInside);
+        return;
+      }
+
+      for (const key of Object.keys(obj)) {
+        const child = obj[key];
+        if (Array.isArray(child)) {
+          for (const item of child) findVisit(item, insideAggOrWindow);
+        } else if (child && typeof child === 'object') {
+          findVisit(child, insideAggOrWindow);
+        }
+      }
+    };
+
+    // Locate first SelectStmt's targetList again — same approach as
+    // the rule itself.
+    let targetList: unknown[] | null = null;
+    astWalk(ast, (node) => {
+      if (targetList) return 'stop';
+      if (node && typeof node === 'object' && 'SelectStmt' in node) {
+        const ss = (node as { SelectStmt: Record<string, unknown> }).SelectStmt;
+        const tl = ss['targetList'];
+        if (Array.isArray(tl)) targetList = tl;
+        return 'stop';
+      }
+      return undefined;
+    });
+    if (!targetList) return null;
+    const list: unknown[] = targetList;
+
+    for (const target of list) {
+      if (!target || typeof target !== 'object') continue;
+      if (!('ResTarget' in (target as Record<string, unknown>))) continue;
+      const rt = (target as { ResTarget: { val?: unknown } }).ResTarget;
+      findVisit(rt.val, false);
+      if (qualifiedColumn !== null) break;
+    }
+
+    if (qualifiedColumn === null) return null;
+
+    // Decide insertion point in the source.
+    const masked = maskStringLiterals(sql);
+    const trailingClauseRe = /\b(HAVING|ORDER\s+BY|LIMIT|OFFSET|FETCH|FOR\s+UPDATE|FOR\s+NO\s+KEY\s+UPDATE|FOR\s+SHARE|FOR\s+KEY\s+SHARE)\b/i;
+    const trailing = masked.match(trailingClauseRe);
+    const groupByClause = ` GROUP BY ${qualifiedColumn} `;
+
+    if (trailing && trailing.index !== undefined) {
+      const pos = trailing.index;
+      // Trim any extra space introduced just before the trailing clause.
+      const before = sql.slice(0, pos).replace(/\s+$/, '');
+      const after = sql.slice(pos);
+      return `${before}${groupByClause}${after}`;
+    }
+
+    // No trailing clause — append before any final semicolon / whitespace.
+    const trailingSemi = /;\s*$/.exec(sql);
+    if (trailingSemi) {
+      const cut = trailingSemi.index;
+      const before = sql.slice(0, cut).replace(/\s+$/, '');
+      return `${before} GROUP BY ${qualifiedColumn}${sql.slice(cut)}`;
+    }
+    const trimmed = sql.replace(/\s+$/, '');
+    return `${trimmed} GROUP BY ${qualifiedColumn}\n`;
+  },
+};

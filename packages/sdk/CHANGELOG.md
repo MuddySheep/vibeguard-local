@@ -13,6 +13,87 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.3.0] - 2026-05-07
+
+The "ESLint moment" — `--fix` autofix support arrives. Four rules
+get fixers; the analyzer pipeline gains an iterate-until-stable
+runner; the CLI gets `--fix` and `--fix-dry-run` flags.
+
+### Added
+
+- **Autofix mode (`--fix`).** `vg-local analyze 'src/**/*.sql' --fix`
+  applies fixes in place, writing changed files back to disk. Exit
+  code is 1 if any block-severity catch remains after fixing.
+- **Dry-run mode (`--fix-dry-run`).** Prints a unified diff per
+  changed file; does not write. Useful for CI / review workflows.
+  Mutually exclusive with `--fix` (passing both is a usage error,
+  exit 2).
+- **`Fixer` public type.** Optional companion to a `Rule`. Single-
+  fix-per-call contract: each fixer applies at most one occurrence
+  of its catch's pattern; the runner iterates.
+- **`RuleEntry.fixer`** — optional field on the rule registry. Four
+  rules get fixers in V1.3:
+  - **SQL-001** — placeholder fix. `FROM a, b` → `FROM a JOIN b ON
+    TRUE /* TODO(vibeguard SQL-001): replace TRUE with a real
+    predicate */`. Semantics unchanged (still cartesian); the fix
+    converts the implicit cross-product into an explicit, marked
+    one for the agent retry loop or human reviewer to address.
+  - **SQL-005** — `col = NULL` → `col IS NULL`; `col <>/!= NULL`
+    → `col IS NOT NULL`. Source-text manipulation guided by the
+    AST, with string-literal masking so `'= NULL'` inside a quoted
+    string is preserved.
+  - **SQL-006** — placeholder fix. Inserts `ORDER BY 1` before the
+    first `LIMIT` / `OFFSET`. `1` is a placeholder column ordinal;
+    replace with the real column for stable pagination.
+  - **SQL-011** — adds `GROUP BY <missing column>` named after the
+    first naked (non-aggregated) column. Inserted before any
+    HAVING / ORDER BY / LIMIT / OFFSET; appended to end-of-statement
+    otherwise. Preserves qualified column names (`t.name`).
+- **`applyFixes(sql, options?)`** — public runner. Iterate-until-
+  stable: applies fixes, re-parses, re-runs rules, repeats. Hard
+  cap at `maxIterations` (default 10) prevents runaway loops.
+  Per-fix parse-verify rolls back any fix that produces unparseable
+  SQL. Returns `{ sql, changed, fixesApplied, remainingCatches,
+  hitIterationLimit, fixersInvoked }`.
+- **`ApplyFixesOptions`** — shape parallels `AnalyzeOptions`. Same
+  `rules` overrides (case-insensitive) so disabled rules' fixers
+  don't run.
+- Per-rule docs pages now carry an `Auto-fix` row in their metadata
+  table for SQL-001, SQL-005, SQL-006, SQL-011.
+- README catch table gains an `Auto-fix` column.
+
+### Changed
+
+- **Test count: 452 → 509.** +26 fixer detection / no-op / parse-
+  cleanly tests, +21 applyFixes runner tests (compound, opt-in/out,
+  iteration cap, telemetry), +10 CLI flag tests (--fix writes,
+  --fix-dry-run prints, conflict).
+- `dist/index.js` and `dist/index.cjs` grew slightly to fit the
+  fixer code paths and the runner. Still well within the 30 KB ESM
+  / 100 KB CJS size budget.
+
+### Architecture notes
+
+- Fixers do **source-text manipulation**, not AST→SQL deparse.
+  Deparse loses comments, whitespace, quoting style — all of which
+  matter to a developer reading their own code. Fixers use the AST
+  to find _whether_ a fix applies; the actual edit is applied to
+  the source string, with string-literal masking to avoid editing
+  text inside quoted strings.
+- The runner's safety story: every applied fix is re-parsed
+  immediately. If the parse fails, the fix is rejected and the
+  previous SQL state is preserved. The "current" SQL never advances
+  to a state that doesn't parse.
+- A throwing fixer doesn't crash the run — try/catch around each
+  fixer invocation skips the rule and tries the next.
+
+### Migration notes
+
+V1.2 → V1.3 is fully backwards compatible. The new `Fixer` type and
+`applyFixes` function are additive. Existing consumers using
+`analyze()` see identical output to V1.2; only opt-in to autofix
+via the CLI flags or by calling `applyFixes()` directly.
+
 ## [1.2.0] - 2026-05-07
 
 First-run CLI experience. Adds the `vg-local` binary with `init` and

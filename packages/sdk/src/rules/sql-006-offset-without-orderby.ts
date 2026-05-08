@@ -25,7 +25,8 @@
 // the first / outermost SelectStmt.
 
 import { astWalk } from '../ast-walk.js';
-import type { Catch, Rule } from '../types.js';
+import { maskStringLiterals } from '../fix-utils.js';
+import type { Catch, Fixer, Rule } from '../types.js';
 
 interface AConstLike {
   readonly isnull?: boolean;
@@ -105,3 +106,39 @@ function isLiteralNull(operand: unknown): boolean {
   const wrap = operand as { A_Const?: AConstLike };
   return wrap.A_Const?.isnull === true;
 }
+
+// ---------------------------------------------------------------------
+// SQL-006 autofix
+// ---------------------------------------------------------------------
+
+/**
+ * Insert `ORDER BY 1` before the first `LIMIT` or `OFFSET` keyword.
+ * `ORDER BY 1` is a placeholder — it sorts by the first projected
+ * column, which is deterministic but rarely the right business
+ * answer. The user should replace `1` with the actual column they
+ * want; the rule's docs page explains why.
+ *
+ * We don't add a comment marker because the runner re-parses after
+ * each fix, and any extra newlines / line comments could perturb
+ * subsequent fixers' position calculations. The fix prose in the
+ * Catch and the docs page carry the explanation.
+ */
+export const SQL_006_FIX: Fixer = {
+  fix(ast: unknown, sql: string): string | null {
+    if (SQL_006(ast) === null) return null;
+
+    // Find LIMIT or OFFSET in the masked source (whichever is earlier).
+    const masked = maskStringLiterals(sql);
+    const limit = masked.match(/\bLIMIT\b/i);
+    const offset = masked.match(/\bOFFSET\b/i);
+
+    let pos = -1;
+    if (limit && limit.index !== undefined) pos = limit.index;
+    if (offset && offset.index !== undefined && (pos === -1 || offset.index < pos)) {
+      pos = offset.index;
+    }
+    if (pos === -1) return null;
+
+    return `${sql.slice(0, pos)}ORDER BY 1 ${sql.slice(pos)}`;
+  },
+};

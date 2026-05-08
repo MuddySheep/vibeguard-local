@@ -118,3 +118,34 @@ export interface AnalysisResult {
  * it walks the AST. See ARCHITECTURE.md for the rationale.
  */
 export type Rule = (ast: unknown) => Catch | null;
+
+/**
+ * A single autofix for a rule. Applies ONE fix per call (matching
+ * ESLint's contract); the fix-runner iterates until stable.
+ *
+ * Receives both the parsed AST (for navigation) and the original SQL
+ * string (for source-text surgery). Returns the modified SQL with
+ * one occurrence of the catch's pattern fixed, or `null` if the
+ * fixer can't safely fix this AST shape.
+ *
+ * Source-text manipulation is deliberate: AST→SQL deparse loses
+ * whitespace, comments, and quoting style, all of which matter to
+ * a developer reading their own code. Fixers use the AST to confirm
+ * whether the catch is real and to find the relevant nodes; the
+ * actual edit is applied to the source string.
+ *
+ * Stability commitment (V1.3+): adding a fixer to an existing rule
+ * is a minor-version event; removing one is major. The shape of the
+ * Fixer type is part of the public API surface.
+ */
+export interface Fixer {
+  /**
+   * Apply at most one fix to the SQL string. Returns the modified
+   * SQL or `null` if no fix can be applied.
+   *
+   * Implementations MUST NOT throw on adversarial input; on any
+   * unexpected AST shape, return `null` and let the rule keep
+   * surfacing the catch unchanged.
+   */
+  fix(ast: unknown, sql: string): string | null;
+}

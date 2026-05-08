@@ -118,11 +118,20 @@ export { init } from './parser.js';
 export type {
   AnalysisResult,
   Catch,
+  Fixer,
   ParseError,
   Rule,
   Severity,
   ThreatCategory,
 } from './types.js';
+
+// Autofix runner (V1.3+):
+export { applyFixes } from './apply-fixes.js';
+export type {
+  ApplyFixesOptions,
+  ApplyFixesResult,
+  ApplyFixesRulesOption,
+} from './apply-fixes.js';
 
 // Raw parser access (advanced):
 export { parseQuery } from './parser.js';

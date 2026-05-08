@@ -24,7 +24,8 @@
 
 import { astWalk } from '../ast-walk.js';
 import { extractFromTables, type FromTable } from '../extract-tables.js';
-import type { Catch, Rule } from '../types.js';
+import { maskStringLiterals } from '../fix-utils.js';
+import type { Catch, Fixer, Rule } from '../types.js';
 
 export const SQL_001: Rule = (ast) => {
   // Step 1: walk to the FIRST SelectStmt at any depth. Multi-stmt
@@ -174,3 +175,87 @@ function getColumnQualifier(expr: unknown): string | null {
   const sf = f0 as { String?: { sval?: string } };
   return typeof sf.String?.sval === 'string' ? sf.String.sval : null;
 }
+
+// ---------------------------------------------------------------------
+// SQL-001 autofix
+// ---------------------------------------------------------------------
+
+/**
+ * Placeholder fix for SQL-001:
+ *
+ *   FROM a, b      →  FROM a JOIN b ON TRUE /* TODO(vibeguard SQL-001): replace TRUE with a real predicate * /
+ *
+ * For 3+ comma-separated tables the fixer fires once per call and
+ * the runner iterates: subsequent commas convert in subsequent passes.
+ *
+ * We use `ON TRUE` (functionally equivalent to a CROSS JOIN) plus an
+ * inline TODO comment because:
+ *
+ *   - Postgres requires a boolean expression after `ON`. A
+ *     comment-only `ON` clause doesn't parse, which would cause the
+ *     fix-runner's parse-verify step to reject the fix.
+ *
+ *   - The semantics are unchanged from the implicit cartesian — both
+ *     `FROM a, b` and `FROM a JOIN b ON TRUE` produce the cross
+ *     product. The fix doesn't claim to make the query safe; it
+ *     converts an implicit cartesian into a marked, explicit one
+ *     that downstream tooling and human reviewers can spot at a
+ *     glance.
+ *
+ *   - The TODO comment names the rule, so an agent retry loop reading
+ *     the diff has a structured signal to look for and act on.
+ *
+ * The trade-off: SQL-001 stops firing on the fixed query (because a
+ * JoinExpr is now explicit), so the catch goes away even though the
+ * cartesian is still there. This is honest fail-soft autofix
+ * behavior; the docs page documents the placeholder semantics so
+ * customers using --fix know what they're getting.
+ *
+ * Fail-soft: returns null on FROM clauses we can't parse with our
+ * targeted regex (subquery FROM, complex aliases, embedded comments).
+ * The catch surfaces unchanged in those cases — better than a
+ * brittle source rewrite.
+ */
+export const SQL_001_FIX: Fixer = {
+  fix(ast: unknown, sql: string): string | null {
+    if (SQL_001(ast) === null) return null;
+
+    // Find the first FROM ... , ... pattern in the masked source.
+    // Limited to the simple cases — bare relname, optional schema
+    // qualifier, optional alias (with or without AS keyword), then
+    // a comma, then the same shape again. Subquery FROMs and
+    // complex parenthesized expressions fall through to null.
+    const masked = maskStringLiterals(sql);
+
+    // Negative lookahead so the optional-alias capture doesn't swallow
+    // SQL keywords that legitimately follow the table reference.
+    // Without this, `FROM a, b WHERE x` matches the alias as `b WHERE`,
+    // and the rewrite produces unparseable SQL.
+    const NOT_KEYWORD =
+      '(?!(?:WHERE|ORDER|GROUP|LIMIT|OFFSET|JOIN|INNER|LEFT|RIGHT|FULL|OUTER|CROSS|NATURAL|USING|ON|HAVING|UNION|INTERSECT|EXCEPT|RETURNING|FETCH|FOR|WINDOW)\\b)';
+
+    // Anchor on the keyword `FROM`; capture the first two table
+    // references separated by a comma. Each table is name (with
+    // optional schema) + optional alias that isn't a SQL keyword.
+    const tableShape =
+      `\\w+(?:\\.\\w+)?(?:\\s+(?:AS\\s+)?${NOT_KEYWORD}\\w+)?`;
+    const fromTablePattern = `(${tableShape})\\s*,\\s*(${tableShape})`;
+    const re = new RegExp(`\\bFROM\\s+${fromTablePattern}`, 'i');
+    const m = masked.match(re);
+    if (!m || m.index === undefined) return null;
+
+    // m[0] starts at "FROM". The captured groups are the two tables.
+    // Reconstruct from the original source so we preserve casing/whitespace.
+    const fromKeyword = sql.slice(m.index, m.index + 'FROM'.length);
+    const tail = sql.slice(m.index + m[0].length);
+    const head = sql.slice(0, m.index);
+    const t1 = m[1];
+    const t2 = m[2];
+    if (!t1 || !t2) return null;
+
+    const replacement =
+      `${fromKeyword} ${t1} JOIN ${t2} ` +
+      `ON TRUE /* TODO(vibeguard SQL-001): replace TRUE with a real predicate */`;
+    return head + replacement + tail;
+  },
+};

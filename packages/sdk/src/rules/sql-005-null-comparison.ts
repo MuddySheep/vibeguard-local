@@ -28,7 +28,8 @@
 //     Catch contract per Rule type)
 
 import { astWalk } from '../ast-walk.js';
-import type { Catch, Rule } from '../types.js';
+import { maskStringLiterals } from '../fix-utils.js';
+import type { Catch, Fixer, Rule } from '../types.js';
 
 interface AConstLike {
   readonly isnull?: boolean;
@@ -98,3 +99,56 @@ function isNullLiteral(operand: unknown): boolean {
   const wrap = operand as { A_Const?: AConstLike };
   return wrap.A_Const?.isnull === true;
 }
+
+// ---------------------------------------------------------------------
+// SQL-005 autofix
+// ---------------------------------------------------------------------
+
+/**
+ * Single-fix-per-call autofix for SQL-005:
+ *
+ *   x = NULL    →  x IS NULL
+ *   x <> NULL   →  x IS NOT NULL
+ *   x != NULL   →  x IS NOT NULL
+ *
+ * Applies to the FIRST occurrence in the source. The fix-runner
+ * iterates: subsequent occurrences are fixed in subsequent passes.
+ *
+ * Fail-soft: returns null if the source-level pattern can't be
+ * located (e.g., the ` = NULL` text is buried inside a string
+ * literal — the AST said the catch was real, but the literal-mask
+ * pass hides our regex from matching the actual source position).
+ */
+export const SQL_005_FIX: Fixer = {
+  fix(ast: unknown, sql: string): string | null {
+    if (SQL_005(ast) === null) return null;
+
+    // Mask string literals + comments so we don't accidentally edit
+    // text inside a quoted string. The masked string has the same
+    // length and same byte offsets as `sql`, so positions found in
+    // the masked text apply to the original text directly.
+    const masked = maskStringLiterals(sql);
+
+    // Find earliest of `= NULL` or `<>/!= NULL`.
+    const reEq = /(\b\w+(?:\.\w+)?)\s*=\s*NULL\b/i;
+    const reNe = /(\b\w+(?:\.\w+)?)\s*(?:<>|!=)\s*NULL\b/i;
+
+    const eq = masked.match(reEq);
+    const ne = masked.match(reNe);
+
+    let chosen: { match: RegExpMatchArray; replacement: string } | null = null;
+    if (eq && eq.index !== undefined) {
+      const ident = sql.slice(eq.index, eq.index + (eq[1] ?? '').length);
+      chosen = { match: eq, replacement: `${ident} IS NULL` };
+    }
+    if (ne && ne.index !== undefined && (chosen === null || ne.index < (chosen.match.index ?? 0))) {
+      const ident = sql.slice(ne.index, ne.index + (ne[1] ?? '').length);
+      chosen = { match: ne, replacement: `${ident} IS NOT NULL` };
+    }
+    if (!chosen || chosen.match.index === undefined) return null;
+
+    const start = chosen.match.index;
+    const end = start + chosen.match[0].length;
+    return sql.slice(0, start) + chosen.replacement + sql.slice(end);
+  },
+};
