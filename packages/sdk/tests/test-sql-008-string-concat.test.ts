@@ -160,3 +160,19 @@ describe('SQL-008 — output stability', () => {
     expect(c?.fix).toContain('parameterized');
   });
 });
+
+  describe('SQL-008 — gallery sample regression pin', () => {
+    // The playground gallery's SQL-008 sample, pinned VERBATIM here so
+    // any future rule refactor that breaks the gallery sample fails CI
+    // immediately. Mirrors apps/playground/tests/test-samples-fire.test.ts
+    // but at the SDK layer for fast iteration.
+    it('fires on the playground SQL-008 gallery sample', () => {
+      const sql = `SELECT * FROM users\nWHERE name = $1 || ' OR 1=1';`;
+      const r = parseQuery(sql);
+      expect(r.error).toBeUndefined();
+      const c = SQL_008(r.ast!);
+      expect(c).not.toBeNull();
+      expect(c!.code).toBe('SQL-008');
+      expect(c!.confidence).toBe(90);
+    });
+  });

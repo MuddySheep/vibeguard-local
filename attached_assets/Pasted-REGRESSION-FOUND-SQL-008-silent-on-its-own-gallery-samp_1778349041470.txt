@@ -1,0 +1,63 @@
+REGRESSION FOUND — SQL-008 silent on its own gallery sample. Do not push v1.6.0 to npm.
+
+Reproduction:
+  1. Open the playground (locally or production — the live deploy reproduces it).
+  2. Click the SQL-008 sample button in the gallery.
+  3. The loaded query is:
+        SELECT * FROM users
+        WHERE name = 'admin' || ' OR 1=1';
+  4. Expected: SQL-008 fires (string-concatenation injection pattern).
+  5. Actual: only SQL-015 fires. SQL-008 is silent.
+
+What this means:
+  - SQL-008's unit tests are passing (719/719) but the rule does not fire on
+    its own canonical sample. There is a gap between what the unit fixture
+    tests and what the gallery sample exercises. That gap is the bug.
+
+Root-cause investigation steps:
+  1. Diff packages/sdk/src/rules/sql-008-*.ts between v1.5 and current. If
+     the rule logic changed at all in this expansion, the change is the
+     suspect. If it did NOT change, the suspect is one of the shared
+     helpers it depends on.
+  2. Check whether SQL-008 uses func-names.ts or stmt-dispatch.ts. If yes,
+     trace whether either helper now filters out the concat-operator
+     (`||`) AST shape that SQL-008 relies on detecting.
+  3. Run the analyzer against the exact gallery query in isolation
+     (vibeguard-local CLI or a quick analyze() call):
+        SELECT * FROM users WHERE name = 'admin' || ' OR 1=1';
+     and dump the AST. Confirm what AST node shape SQL-008 is supposed to
+     be matching, and whether that node shape is reaching the rule's
+     check() function.
+  4. Compare the gallery sample text against the unit-test fixtures for
+     SQL-008. They may differ in a load-bearing way (whitespace, quoting,
+     concat-operator placement). If so, the unit fixtures need to be
+     updated to match the gallery sample, AND a new fixture added that's
+     literally the gallery sample so this can never silently regress
+     again.
+
+Fix scope:
+  - Restore SQL-008 firing on its gallery sample.
+  - Add a test fixture that uses the gallery sample text VERBATIM, so any
+    future refactor that breaks the gallery sample fails CI immediately.
+  - Confirm no other gallery sample exhibits the same gap. Loop through
+    all 36 samples programmatically: for each sample, the rule named in
+    the sample's ID should fire when that sample is analyzed. This is a
+    one-time test that should live permanently in the playground test
+    suite.
+
+Constraints (same as the original brief):
+  - Do not change SQL-008's catch ID, severity, or confidence range.
+  - Do not change any other rule.
+  - Do not push to GitHub Pages until I've reverified the live deploy.
+  - Do not publish to npm under any circumstances.
+
+Report back with:
+  - Root cause in one paragraph.
+  - The diff of the fix.
+  - Confirmation that all 36 gallery samples now fire their named rule
+    when analyzed (the new permanent test).
+  - Updated test count (currently 719; should be 719 + however many new
+    fixtures you add).
+
+We will not ship v1.6.0 until this is fixed and the live deploy is
+re-verified.

@@ -70,9 +70,9 @@ WHERE id NOT IN (SELECT user_id FROM bans);`,
   {
     code: 'SQL-008',
     title: 'String-concatenation injection risk',
-    description: 'Building SQL by concatenating untrusted-looking literals.',
+    description: 'Building SQL by concatenating a parameter into a literal — canonical SQLi shape.',
     sql: `SELECT * FROM users
-WHERE name = 'admin' || ' OR 1=1';`,
+WHERE name = $1 || ' OR 1=1';`,
   },
   {
     code: 'SQL-009',
@@ -156,7 +156,7 @@ FOR EACH ROW EXECUTE FUNCTION log_event();`,
       title: "CREATE OR REPLACE FUNCTION — silent overwrite",
       description: "OR REPLACE silently shadows any pre-existing function with the same signature.",
       sql: `CREATE OR REPLACE FUNCTION audit_check() RETURNS void
-AS $ BEGIN END $ LANGUAGE plpgsql;`,
+AS $$ BEGIN END $$ LANGUAGE plpgsql;`,
     },
   {
       code: 'SQL-021',
@@ -238,11 +238,11 @@ ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email;`,
     },
   {
       code: 'SQL-033',
-      title: "DO $ ... $ — procedural block (body not analyzed)",
+      title: "DO $$ ... $$ — procedural block (body not analyzed)",
       description: "DO bodies contain plpgsql that static analysis does not parse — review manually.",
-      sql: `DO $ BEGIN
+      sql: `DO $$ BEGIN
   DELETE FROM users;
-END $;`,
+END $$;`,
     },
   {
       code: 'SQL-034',
