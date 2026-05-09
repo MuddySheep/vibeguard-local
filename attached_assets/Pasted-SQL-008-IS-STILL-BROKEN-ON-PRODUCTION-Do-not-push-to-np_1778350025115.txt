@@ -1,0 +1,62 @@
+SQL-008 IS STILL BROKEN ON PRODUCTION. Do not push to npm.
+
+Empirical evidence from the live playground at
+https://muddysheep.github.io/vibeguard-local/ as of just now:
+
+I ran 8 queries that should fire SQL-008. Zero of them fired SQL-008.
+The gallery sample itself does not fire SQL-008. The 21 new rules
+(SQL-016 through SQL-036) do all fire correctly, which means the
+v1.6 deploy IS live — this is a real regression, not a stale build.
+
+Failing queries (none fire SQL-008):
+  1. SELECT * FROM users WHERE name = 'admin' || ' OR 1=1';
+  2. SELECT 'a' || 'b' AS x FROM users;
+  3. SELECT * FROM users WHERE name = 'a' || 'b' || ' OR 1=1';
+  4. SELECT id FROM users WHERE x = 'foo' || 'bar';
+  5. UPDATE users SET note = 'hello ' || ' world' WHERE id = 1;
+
+Required diagnostic steps:
+
+1. Run this exact query through analyze() in your local environment:
+     SELECT * FROM users WHERE name = 'admin' || ' OR 1=1';
+   Report whether SQL-008 fires LOCALLY. If yes, then the issue is
+   between local and production — the SDK build on production is
+   stale, or the playground bundle is using an old version.
+
+2. If SQL-008 does fire locally on that exact query, dump:
+   - The version of @vibeguard-dev/local in apps/playground/package.json
+   - The dist/ output hash of the SDK
+   - Confirm that apps/playground built against the just-fixed SDK
+     and not a cached older version
+
+3. If SQL-008 does NOT fire locally, then the previous fix didn't
+   actually fix anything. Open packages/sdk/src/rules/sql-008-*.ts
+   and trace the rule's check() function manually:
+   - What AST node shape is the rule looking for?
+   - Parse the failing query and dump its AST. What node shape does
+     the concat (||) operator produce?
+   - Is the rule's matcher actually matching that shape?
+
+4. Add a regression test that runs the EXACT gallery sample text
+   through analyze() and asserts SQL-008 is in the result. Not a
+   variant, not a different fixture — the verbatim gallery sample.
+   This test should be permanent.
+
+5. Implement the fix.
+
+6. Verify locally that the gallery sample query fires SQL-008.
+
+7. Verify the playground build pipeline:
+     - Build the SDK
+     - Confirm apps/playground's node_modules/@vibeguard-dev/local
+       actually has the new code (check the file timestamp or hash)
+     - Build apps/playground
+     - Deploy
+
+Do not push to GitHub Pages until step 6 passes locally.
+Do not publish to npm until I re-verify the live playground.
+
+This is the second deploy claiming to fix SQL-008. Before pushing
+again, please tell me which of (1)/(2)/(3) above describes what
+actually happened on the previous attempt — that's the diagnostic
+information I need to trust the next push.
