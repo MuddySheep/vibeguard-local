@@ -52,3 +52,6 @@ docs/stories/
 **/docs/EPIC-WORKFLOW.md
 **/docs/epics/
 **/docs/stories/
+
+# Local prompt drops — never commit
+attached_assets/
