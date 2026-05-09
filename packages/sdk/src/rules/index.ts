@@ -84,6 +84,15 @@ export interface RuleEntry {
   readonly rule: Rule;
   readonly defaultEnabled: boolean;
   readonly fixer?: Fixer;
+  /**
+   * Optional [min, max] confidence band the rule's catches fall in.
+   * Documentation aid — consumers can use this to tune policy without
+   * having to read each rule's docs. Rules with multiple confidence
+   * tiers (e.g. SQL-008 emits 75 OR 85 depending on tier) declare the
+   * full span here. Rules without this field have a single fixed
+   * confidence documented in their per-rule docs.
+   */
+  readonly confidenceRange?: readonly [number, number];
 }
 
 /**
@@ -104,7 +113,7 @@ export const RULE_REGISTRY: readonly RuleEntry[] = [
   { code: 'SQL-005', rule: SQL_005, defaultEnabled: true, fixer: SQL_005_FIX },
   { code: 'SQL-006', rule: SQL_006, defaultEnabled: true, fixer: SQL_006_FIX },
   { code: 'SQL-007', rule: SQL_007, defaultEnabled: true },
-  { code: 'SQL-008', rule: SQL_008, defaultEnabled: true },
+  { code: 'SQL-008', rule: SQL_008, defaultEnabled: true, confidenceRange: [75, 85] },
   { code: 'SQL-009', rule: SQL_009, defaultEnabled: true },
   { code: 'SQL-010', rule: SQL_010, defaultEnabled: true },
   { code: 'SQL-011', rule: SQL_011, defaultEnabled: true, fixer: SQL_011_FIX },

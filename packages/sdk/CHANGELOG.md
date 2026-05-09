@@ -142,11 +142,33 @@ Linux for this release. The previous baseline was captured on win32
   default-on except none — all 21 new rules are default-on. SQL-014
   remains the single default-off rule. Per STABILITY.md this is a
   minor-version event.
-- **Test count: 538 → 712.** +174 across 21 new rule test files (each
-  with positive, negative, and multi-statement composition coverage).
+- **Test count: 538 → 731.** +193 across 21 new rule test files
+  (positive, negative, and multi-statement composition coverage) and
+  +11 SQL-008 tests covering the new two-tier behavior (CASE 1
+  runtime-injection, CASE 2 pure-literal payload-shape, CASE 3
+  benign-literal silent, plus the 5 reported battery queries pinned
+  verbatim and the verbatim gallery sample).
 - README catch table updated from 15 to 36 rows. The "Known
   limitations" section in `packages/sdk/README.md` was rewritten to
   reflect that literal tautologies are now caught by SQL-034.
+- **SQL-008 — two-tier detection (severity & confidence revised).**
+  Added a CASE 2 (`info` / 75) tier that fires on pure-literal `||`
+  chains when any literal contains an injection-payload signature
+  (`OR`/`UNION`/`DROP`/`TRUNCATE`/`DELETE`/`EXEC`/`EXECUTE`, comment
+  markers, statement terminators, `1=1` tautology, `''=''` quote
+  evasion). The existing v1.5 runtime-injection fire (param /
+  function-call mix) is now CASE 1 at `warn` / 85 (down from
+  `block` / 90). No v1.5 query that fired SQL-008 stops firing in
+  v1.6 — verified by the v1.5 positive corpus test set. Severity
+  downgrade follows consumer feedback that `block` was over-aggressive
+  given the LIKE-pattern false-positive surface; the new `info` tier
+  surfaces injection-shape footprints (e.g. `'admin' || ' OR 1=1'`)
+  without crying wolf. New `RuleEntry.confidenceRange` field declares
+  SQL-008's `[75, 85]` span. Full trace in
+  `docs/rules/sql-008.md` and `tests/test-sql-008-string-concat.test.ts`.
+- **`RuleEntry` gains optional `confidenceRange: readonly [number, number]`.**
+  Documentation aid for rules that emit at multiple confidence tiers.
+  Additive — existing entries continue to work unchanged.
 
 ### Migration notes
 

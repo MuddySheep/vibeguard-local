@@ -1,53 +1,68 @@
 // SQL-008 — Possible string-concatenation injection.
 //
-// Severity:    block
-// Confidence:  80–90 (param-bearing concat = 90; mixed-shape = 80)
-// Threat:      injection
+// Two-tier detection (v1.6+):
 //
-// Pattern: a string-concat operator (`||`) is used with at least one
-// non-literal operand that's NOT a plain column reference. The
-// canonical SQL-injection shape is `'WHERE id = ' || $1 || ' OR ...'`
-// — building SQL fragments via interpolation. Even legitimate uses
-// (e.g. `$1 || '%'` for a LIKE pattern) mirror the dangerous shape
-// closely enough to warrant a block-severity catch.
+//   CASE 1 — runtime-injection shape   (severity: warn, confidence: 85)
+//     Concat (`||`) where at least one operand is NOT a literal A_Const
+//     and NOT an array literal. Param refs, column refs concatenated
+//     with non-literals, function-call results, sub-selects, etc. all
+//     qualify. This is the actually-exploitable shape — the value
+//     placed into the SQL fragment is not constant-foldable, so an
+//     attacker-controlled value can change the meaning of the query.
 //
-// Detection algorithm:
-//   1. Walk every A_Expr with kind=AEXPR_OP, op '||'
-//   2. Flatten left-associative concat chains (`a || b || c` becomes
-//      ['a', 'b', 'c'] of leaf operands)
-//   3. Classify each operand:
-//        literal | param | column | array | other
-//   4. Suppress if:
-//        - all operands are literals (pure literal concat)
-//        - any operand is an array literal (Postgres `||` is also
-//          array-concat; we don't have schema info to know which
-//          overload applies — array operand is a strong "not string-
-//          concat" signal)
-//        - every operand is column-or-literal (display concat shape;
-//          legitimate text-building from row columns)
-//   5. Fire if:
-//        - any operand is a ParamRef → confidence 90
-//          ("dynamic SQL building" — clearest injection shape)
-//        - operand mix involves function calls / other shapes →
-//          confidence 80 ("borderline; review")
+//   CASE 2 — pure-literal injection-payload shape   (severity: info, confidence: 75)
+//     Concat (`||`) where every operand is a literal A_Const, AND at
+//     least one literal contains an injection-payload signature
+//     (`OR`/`UNION`/`DROP`/`TRUNCATE`/`DELETE`/`EXEC`/`EXECUTE`
+//     keywords, comment markers, statement terminators followed by
+//     identifiers, `1=1` tautology, `''=''` quote-evasion). The query
+//     itself is constant-folded and harmless at runtime, but the SHAPE
+//     is the unmistakable footprint of code an LLM (or human) writes
+//     when they're authoring an injection vector. Surface it at info
+//     so the reviewer can investigate without crying wolf.
 //
-// Trade-offs documented in docs/rules/sql-008.md:
-//   - LIKE patterns built via `$1 || '%'` fire as false-positive.
-//     Cost: rewrite to `$1 || '%'` parameterized differently or
-//     suppress in consumer policy. Block-severity is the right
-//     defensive default for an injection-class catch.
-//   - Array concat across mixed shapes (e.g. `col || ARRAY[1]`)
-//     suppresses correctly thanks to the array-operand check.
+//   CASE 3 — pure-literal benign concat   (suppressed)
+//     All operands literal, no payload signature in any literal.
+//     Examples: `'a' || 'b'`, `'hello ' || ' world'`,
+//     `'first' || ' ' || 'last'`. Constant-folded, no injection
+//     vector, no injection-shape footprint — silent.
+//
+//   Array operands (`A_ArrayExpr`) → suppressed at every tier.
+//   Postgres `||` is also array-concat; without schema info we can't
+//   tell which overload applies, and array operands are a strong
+//   "not string concat" signal.
+//
+//   Display concat (`first_name || ' ' || last_name` — all column-
+//   or-literal with no payload signature) → suppressed. Falls through
+//   CASE 1 (no non-literal operand qualifies because column refs are
+//   the legitimate display-concat shape) into CASE 2 (mixed not all-
+//   literal so payload check doesn't apply) and emits nothing.
+//
+// Stability:
+//   Every query that fired SQL-008 in v1.5 still fires in v1.6.
+//   Confidence and severity for the v1.5 param-bearing fire shifted
+//   from (block, 90) to (warn, 85) per consumer feedback that block
+//   was too aggressive given the LIKE-pattern false-positive surface.
+//   Per STABILITY.md, severity changes on existing catches require
+//   a minor-version bump and CHANGELOG entry — both present in 1.6.0.
 
 import { astWalk } from '../ast-walk.js';
-import type { Catch, Rule } from '../types.js';
+import type { Catch, Rule, Severity } from '../types.js';
 
 type OperandKind = 'literal' | 'param' | 'column' | 'array' | 'other';
 
 interface Hit {
+  readonly tier: 'runtime' | 'payload-shape';
   readonly confidence: number;
-  readonly hasParam: boolean;
+  readonly severity: Severity;
 }
+
+// Injection-payload signatures we look for INSIDE pure-literal concat
+// chains. These are the obvious shapes — refine if false-positive
+// reports come in. Word-boundaries on keywords prevent matching e.g.
+// "DROPDOWN" or "EXECUTOR".
+const PAYLOAD_SIGNATURE =
+  /\b(OR|UNION|DROP|TRUNCATE|DELETE|EXEC|EXECUTE)\b|--|;\s*\w|\b1\s*=\s*1\b|'\s*=\s*'/i;
 
 export const SQL_008: Rule = (ast) => {
   let hit: Hit | null = null;
@@ -59,42 +74,67 @@ export const SQL_008: Rule = (ast) => {
     const operands = flatten(node);
     const kinds = operands.map(classifyOperand);
 
-    // All literals → pure concat, no concern.
-    if (kinds.every((k) => k === 'literal')) return 'skip';
-    // Any array operand → assume array concat, not string concat.
+    // Array operand → assume array concat, not string concat. Skip.
     if (kinds.some((k) => k === 'array')) return 'skip';
-    // Param operand → highest-confidence fire.
-    if (kinds.some((k) => k === 'param')) {
-      hit = { confidence: 90, hasParam: true };
+
+    // CASE 1 — any non-literal, non-column-only operand is the
+    // runtime-injection shape. Param OR mixed-with-function-call OR
+    // any 'other' kind. Pure column-only display concat falls through
+    // (handled in the all-literal-or-column branch below).
+    if (kinds.some((k) => k === 'param' || k === 'other')) {
+      hit = { tier: 'runtime', confidence: 85, severity: 'warn' };
       return 'stop';
     }
-    // All operands are columns or literals → display concat, suppress.
-    if (kinds.every((k) => k === 'literal' || k === 'column')) {
+
+    // All operands are columns/literals. Two sub-cases:
+    //   - Pure literal → CASE 2 / CASE 3 distinction by payload regex.
+    //   - Mixed column + literal (or all column) → display concat,
+    //     suppress regardless of literal contents (a column reference
+    //     means the value isn't constant-foldable but it also isn't
+    //     attacker-built; it's the row's own data).
+    if (kinds.every((k) => k === 'literal')) {
+      // Concatenate the literal text and check for payload signature.
+      const blob = operands.map(literalText).join(' ');
+      if (PAYLOAD_SIGNATURE.test(blob)) {
+        hit = {
+          tier: 'payload-shape',
+          confidence: 75,
+          severity: 'info',
+        };
+        return 'stop';
+      }
+      // CASE 3 — benign pure-literal concat. Skip.
       return 'skip';
     }
-    // Mix involves function calls or other shapes — fire conservatively.
-    hit = { confidence: 80, hasParam: false };
-    return 'stop';
+
+    // Mixed column + literal → display concat. Skip.
+    return 'skip';
   });
 
   if (!hit) return null;
   const h: Hit = hit;
 
-  const detailLead = h.hasParam
-    ? 'A string-concatenation operator (`||`) combines a parameter ' +
-      'with other operands. This is the canonical shape of SQL ' +
-      'injection — even when the parameter is driver-bound, the ' +
-      'concatenation result may be interpreted as SQL text rather ' +
-      'than as a single value.'
-    : 'A string-concatenation operator (`||`) combines a function ' +
-      'result or other non-literal expression with other operands. ' +
-      'Building SQL fragments via concatenation is a frequent source ' +
-      'of injection vulnerabilities.';
+  const detailLead =
+    h.tier === 'runtime'
+      ? 'A string-concatenation operator (`||`) combines a parameter, ' +
+        'function result, or other non-literal expression with other ' +
+        'operands. This is the canonical runtime shape of SQL ' +
+        'injection — the value placed into the SQL fragment is not ' +
+        'constant-foldable, so an attacker-controlled value can ' +
+        'change the meaning of the query.'
+      : 'A string-concatenation operator (`||`) combines literal ' +
+        'strings, and at least one of those literals contains an ' +
+        "injection-payload signature (e.g. `OR`, `1=1`, `--`, `;`). " +
+        'The query as written is constant-folded by the parser and ' +
+        'is not exploitable at runtime, but the shape is the ' +
+        'unmistakable footprint of injection-style code authoring — ' +
+        'worth a manual review of how the surrounding code came to ' +
+        'produce this query.';
 
   const result: Catch = {
     code: 'SQL-008',
     title: 'Possible string-concatenation injection',
-    severity: 'block',
+    severity: h.severity,
     confidence: h.confidence,
     detail: `${detailLead} The LLM (or human) almost always meant to use parameterized values instead.`,
     fix:
@@ -143,4 +183,10 @@ function classifyOperand(node: unknown): OperandKind {
   if ('ColumnRef' in obj) return 'column';
   if ('A_ArrayExpr' in obj) return 'array';
   return 'other';
+}
+
+function literalText(node: unknown): string {
+  if (!node || typeof node !== 'object') return '';
+  const obj = node as { A_Const?: { sval?: { sval?: string } } };
+  return obj.A_Const?.sval?.sval ?? '';
 }

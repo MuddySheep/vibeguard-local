@@ -70,9 +70,10 @@ WHERE id NOT IN (SELECT user_id FROM bans);`,
   {
     code: 'SQL-008',
     title: 'String-concatenation injection risk',
-    description: 'Building SQL by concatenating a parameter into a literal — canonical SQLi shape.',
+    description:
+      'Building SQL by concatenating literals that contain an injection-payload shape. Constant-folded, but the SHAPE is what the rule catches (info severity).',
     sql: `SELECT * FROM users
-WHERE name = $1 || ' OR 1=1';`,
+WHERE name = 'admin' || ' OR 1=1';`,
   },
   {
     code: 'SQL-009',
