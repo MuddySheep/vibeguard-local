@@ -1,6 +1,6 @@
 {
   "name": "@vibeguard-dev/local",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Static SQL safety analysis for AI agents — catch dangerous queries before they reach your database.",
   "keywords": [
     "sql",

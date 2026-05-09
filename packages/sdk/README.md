@@ -15,7 +15,7 @@ Your AI agent generates a SQL query. Before you run it, `@vibeguard-dev/local`
 checks the query's structure for known footguns: missing `WHERE` clauses,
 cartesian explosions, type-coercion bugs, recursive CTEs that don't
 terminate, irreversible `DROP` / `TRUNCATE`, over-fetching projections.
-**15 senior-DBA-level checks**, all static, sub-millisecond, zero network
+**36 senior-DBA-level checks**, all static, sub-millisecond, zero network
 calls.
 
 ## Known limitations
@@ -24,24 +24,18 @@ VibeGuard is a **static, schema-blind** analyzer. It checks the *shape*
 of a query, not its run-time effect. A few boundaries you should know
 about before you ship it into CI:
 
-- **Tautological `WHERE` clauses are not detected.** SQL-003 verifies
-  that an `UPDATE` / `DELETE` *has* a `WHERE` clause; it does not check
-  whether the clause meaningfully filters. The following slip through
-  today and behave the same as an unbounded statement at run time:
+- **Literal tautologies in `WHERE` are caught (since v1.6.0).** SQL-034
+  fires at `block` / 95 on `UPDATE` / `DELETE` whose `WHERE` reduces to
+  a literal tautology — `WHERE 1=1`, `WHERE true`, `WHERE id = id`,
+  `WHERE NOT false`, `WHERE 'a' = 'a'`. The cross-join variants
+  (`UPDATE … FROM` / `DELETE … USING` without a join predicate) are
+  caught by SQL-035 and SQL-036 at `block` / 90.
 
-  ```sql
-  DELETE FROM users WHERE 1=1;
-  UPDATE users SET banned = true WHERE id = id;
-  DELETE FROM users WHERE id IS NOT NULL;             -- on a NOT NULL PK
-  DELETE FROM users WHERE id IN (SELECT id FROM users);
-  ```
-
-  This is the most common AI-agent placeholder pattern (Cursor and
-  Claude Code both emit `WHERE 1=1` as "I'll fill this in later" and
-  forget). A literal-tautology detector (`WHERE 1=1`, `WHERE true`,
-  `WHERE col = col`, `WHERE NOT false`) is planned as **SQL-016** in
-  v1.1.0. Until then: assume `WHERE 1=1` is a missing filter and treat
-  it like `DELETE FROM users` with no `WHERE` at all.
+  What is still NOT caught: **semantic tautologies that depend on
+  schema knowledge**, such as `DELETE FROM users WHERE id IS NOT NULL`
+  on a `NOT NULL` PK column, or `DELETE FROM users WHERE id IN (SELECT
+  id FROM users)`. These require column-nullability or correlated-
+  reference tracking and are out of scope for the local SDK.
 
 - **Schema-aware checks are out of scope.** The SDK does not know
   which columns are `NOT NULL`, which columns are foreign-key targets,
@@ -145,7 +139,7 @@ For those, you want **VibeGuard Cloud** — the wire-protocol proxy and MCP
 server this SDK is the static-analysis layer of. Use the SDK locally; use
 the cloud in production. The two are designed to work together.
 
-## The 15 catches
+## The 36 catches
 
 Each catch has a stable code (e.g. `SQL-001`), a severity, a confidence
 range, and links to a docs page with examples and references. **Catch IDs
@@ -169,6 +163,27 @@ are forever-stable** — once published, an ID always means the same thing
 | [`SQL-013`](./docs/rules/sql-013.md) | DROP / TRUNCATE / DDL destruction | block / warn | 85–99 | ON | — | ✅ shipped (1.1.0) |
 | [`SQL-014`](./docs/rules/sql-014.md) | INSERT/UPDATE/DELETE without RETURNING | info | 50 | **OFF** (opt-in) | — | ✅ shipped (1.1.0) |
 | [`SQL-015`](./docs/rules/sql-015.md) | `SELECT *` over-fetch | info | 60 | ON | — | ✅ shipped (1.1.0) |
+| [`SQL-016`](./docs/rules/sql-016.md) | `COPY … FROM/TO PROGRAM` (server-side RCE) | block | 99 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-017`](./docs/rules/sql-017.md) | `CREATE EXTENSION` of untrusted procedural language | block | 95 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-018`](./docs/rules/sql-018.md) | `ALTER TABLE … DROP COLUMN` | warn | 90 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-019`](./docs/rules/sql-019.md) | `CREATE TRIGGER` (hidden side effects) | info | 75 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-020`](./docs/rules/sql-020.md) | `CREATE OR REPLACE FUNCTION` (silent overwrite) | info | 70 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-021`](./docs/rules/sql-021.md) | `GRANT … TO PUBLIC` | warn | 90 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-022`](./docs/rules/sql-022.md) | `CREATE/ALTER ROLE … SUPERUSER` | block | 95 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-023`](./docs/rules/sql-023.md) | `pg_terminate_backend` / `pg_cancel_backend` | warn | 85 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-024`](./docs/rules/sql-024.md) | `VACUUM FULL` (ACCESS EXCLUSIVE outage) | warn | 80 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-025`](./docs/rules/sql-025.md) | `REFRESH MATERIALIZED VIEW` (blocking refresh) | warn | 75 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-026`](./docs/rules/sql-026.md) | `MERGE` with tautological `ON` | block | 90 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-027`](./docs/rules/sql-027.md) | `SET search_path` to attacker-controlled schema | warn | 85 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-028`](./docs/rules/sql-028.md) | `pg_create_*_replication_slot` | warn | 80 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-029`](./docs/rules/sql-029.md) | `dblink` / `CREATE SERVER` (outbound network) | warn | 80 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-030`](./docs/rules/sql-030.md) | `pg_read_*` / `lo_export` / `pg_ls_dir` (server FS) | warn | 90 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-031`](./docs/rules/sql-031.md) | `INSERT … SELECT … ON CONFLICT DO UPDATE` (unbounded upsert) | info | 75 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-032`](./docs/rules/sql-032.md) | `EXPLAIN ANALYZE` of a destructive statement | info | 80 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-033`](./docs/rules/sql-033.md) | `DO $$ … $$` opaque procedural block | info | 70 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-034`](./docs/rules/sql-034.md) | `WHERE 1=1` / literal tautology on UPDATE/DELETE | block | 95 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-035`](./docs/rules/sql-035.md) | `UPDATE … FROM` without join predicate | block | 90 | ON | — | ✅ shipped (1.6.0) |
+| [`SQL-036`](./docs/rules/sql-036.md) | `DELETE … USING` without join predicate | block | 90 | ON | — | ✅ shipped (1.6.0) |
 
 See [ROADMAP.md](./ROADMAP.md) for what's in / out of scope.
 

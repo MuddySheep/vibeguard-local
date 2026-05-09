@@ -13,6 +13,156 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.6.0] - 2026-05-09
+
+**Postgres catalog expansion.** 21 new catches (`SQL-016` through
+`SQL-036`) focused on destruction, exfiltration, privilege escalation,
+and the analyzer blind spots that prior versions left open. The
+catch count jumps from **15 to 36** — roughly tripling the local
+SDK's coverage of agent-issued SQL footguns.
+
+### Added
+
+The new catches cluster into five themes. All are default-ON unless
+noted; all are shipped at v1.6.0 stable.
+
+**RCE / supply chain (block):**
+
+- **`SQL-016` — `COPY … FROM/TO PROGRAM`** (block / 99). Postgres'
+  documented superuser-only RCE primitive: the `filename` is a shell
+  command run on the database host under the postgres OS-user.
+- **`SQL-017` — `CREATE EXTENSION` of an untrusted procedural language**
+  (block / 95). `plpythonu`, `plperlu`, `pllua`, `plsh` and friends —
+  any extension that gives the database server arbitrary code execution
+  outside the SQL sandbox.
+
+**Schema / DDL hazards (warn / info):**
+
+- **`SQL-018` — `ALTER TABLE … DROP COLUMN`** (warn / 90). Column data
+  is gone the moment the statement commits; no `WHERE` softens it.
+- **`SQL-019` — `CREATE TRIGGER`** (info / 75). Hides side effects on
+  every matching row of subsequent DML — invisible to anyone reading
+  only the surface SQL.
+- **`SQL-020` — `CREATE OR REPLACE FUNCTION`** (info / 70). Silently
+  overwrites whatever existed at that name in that schema.
+
+**Privilege escalation (block / warn):**
+
+- **`SQL-021` — `GRANT … TO PUBLIC`** (warn / 90). Privileges every
+  current and future role on the cluster, including roles that didn't
+  exist when the GRANT was issued.
+- **`SQL-022` — `CREATE/ALTER ROLE … SUPERUSER`** (block / 95). A
+  superuser bypasses every permission check including row-level
+  security and the foreign-data-wrapper sandbox.
+
+**Operational hazards (warn):**
+
+- **`SQL-023` — `pg_terminate_backend` / `pg_cancel_backend`** (warn /
+  85). Bulk-applied against `pg_stat_activity` it is a one-shot DoS
+  primitive.
+- **`SQL-024` — `VACUUM FULL`** (warn / 80). Takes ACCESS EXCLUSIVE on
+  the rewritten table — a documented production outage primitive.
+- **`SQL-025` — `REFRESH MATERIALIZED VIEW`** without `CONCURRENTLY`
+  (warn / 75). Blocks all reads for the duration of the rebuild.
+
+**Detection blind spots and exfiltration channels:**
+
+- **`SQL-026` — `MERGE` with tautological `ON`** (block / 90). The
+  MERGE-side mirror of SQL-034 — full-table mutation expressed in
+  syntax SQL-001/003 do not catch.
+- **`SQL-027` — `SET search_path`** to a non-system schema (warn / 85).
+  Reroutes unqualified table/function references to attacker-controlled
+  shadow definitions.
+- **`SQL-028` — `pg_create_*_replication_slot`** (warn / 80). Streams
+  every WAL change to whoever connects; orphaned slots also pin WAL
+  retention indefinitely (DoS by disk).
+- **`SQL-029` — `dblink` / `CREATE SERVER`** (warn / 80). Outbound
+  network from the database server — the canonical "query data here,
+  send it there" exfiltration shape.
+- **`SQL-030` — `lo_export` / `pg_read_server_files` / `pg_ls_dir`**
+  (warn / 90). Server-side filesystem access under postgres OS-user.
+
+**Boundary cases (info):**
+
+- **`SQL-031` — `INSERT … SELECT … ON CONFLICT DO UPDATE`** without
+  LIMIT (info / 75). Full-table overwrite expressed through INSERT
+  syntax — bypasses SQL-001's UPDATE/DELETE blanket detection.
+- **`SQL-032` — `EXPLAIN ANALYZE` of a destructive statement** (info /
+  80). EXPLAIN ANALYZE actually executes the inner statement to
+  measure timing — the ANALYZE keyword is a silent destructiveness
+  modifier that many operators miss.
+- **`SQL-033` — `DO $$ … $$`** anonymous procedural block (info / 70).
+  An opaque body the analyzer cannot inspect — surface a reminder that
+  unparsed code is being executed.
+
+**Semantic full-table mutations (block):**
+
+- **`SQL-034` — `WHERE <tautology>` on UPDATE/DELETE** (block / 95).
+  Catches `WHERE 1=1`, `WHERE true`, `WHERE id = id`, `WHERE NOT
+  false`, `WHERE 'a' = 'a'`. Closes the SQL-003 placeholder-WHERE
+  blind spot. Deliberately does NOT recurse into AND/OR — `WHERE 1=1
+  AND id = 42` does NOT fire (that's a real query).
+- **`SQL-035` — `UPDATE … FROM` without join predicate** (block / 90).
+  Cartesian product on the source side; every target row updated with
+  values from an arbitrary source row, silently and at plausible row
+  counts.
+- **`SQL-036` — `DELETE … USING` without join predicate** (block / 90).
+  USING-side mirror of SQL-035.
+
+### Performance
+
+A naïve port of all 21 rules regressed every fixture by 100–270%
+(every rule called `astWalk` over the full AST independently — 36
+walks per `analyze()` instead of 15). Two optimizations bring the
+marginal cost to **+4.7% aggregate** vs. the V1.5 registry on the
+same machine, well under the 20% per-fixture / 100µs absolute-delta
+gate:
+
+- **`hasTopLevelStmt(ast, kinds)`** — O(N_stmts) top-level statement-
+  kind dispatch (typically O(1)). Each new rule short-circuits to
+  `null` before walking when the relevant top-level statement kind
+  isn't present. Lives in `packages/sdk/src/rules/stmt-dispatch.ts`.
+- **`extractFuncNames(ast)`** — WeakMap-memoized per-AST extractor of
+  every `FuncCall` last-segment name. Rules SQL-023, SQL-028, SQL-029,
+  SQL-030 all share a single walk via this helper — going from 4
+  per-rule walks to 1 shared walk per `analyze()` call. Lives in
+  `packages/sdk/src/rules/func-names.ts`. The walk is unconditional
+  (no top-level statement gate) because these functions can appear
+  inside `INSERT … SELECT`, `UPDATE … SET col = …`, `EXPLAIN SELECT`,
+  and other non-`SelectStmt` contexts — gating on top-level
+  `SelectStmt` would create exfiltration false-negatives.
+
+The bench baseline at `benchmarks/baseline.json` was refreshed on
+Linux for this release. The previous baseline was captured on win32
+(May 2026) and was no longer comparable.
+
+### Changed
+
+- **`RULES.length` is now 35, was 14.** SQL-016 through SQL-036 are
+  default-on except none — all 21 new rules are default-on. SQL-014
+  remains the single default-off rule. Per STABILITY.md this is a
+  minor-version event.
+- **Test count: 538 → 712.** +174 across 21 new rule test files (each
+  with positive, negative, and multi-statement composition coverage).
+- README catch table updated from 15 to 36 rows. The "Known
+  limitations" section in `packages/sdk/README.md` was rewritten to
+  reflect that literal tautologies are now caught by SQL-034.
+
+### Migration notes
+
+V1.5 → V1.6 is fully backwards compatible. No public types changed;
+no exports were removed or renamed. The new rules surface through
+the same `analyze()` and `RULE_REGISTRY` paths as before.
+
+Customers running the public default path (`analyze(sql)`) will start
+seeing SQL-016 through SQL-036 catches on queries that previously
+returned empty `catches` arrays — that is the intended behavior. To
+suppress any individual rule for a single call, use `options.rules`:
+
+```ts
+analyze(sql, { rules: { 'sql-019': { enabled: false } } });
+```
+
 ## [1.5.0] - 2026-05-08
 
 Browser support arrives via a new subpath import. The web playground

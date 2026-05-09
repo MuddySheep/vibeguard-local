@@ -3,15 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { SAMPLES, SAMPLE_BY_CODE } from '../src/samples.js';
 
 describe('SAMPLES', () => {
-  it('contains exactly 15 entries — one per shipped catch', () => {
-    expect(SAMPLES.length).toBe(15);
+  it('contains exactly 36 entries — one per shipped catch', () => {
+    expect(SAMPLES.length).toBe(36);
   });
 
-  it('codes are unique and match SQL-001 .. SQL-015', () => {
+  it('codes are unique and match SQL-001 .. SQL-036', () => {
     const codes = SAMPLES.map((s) => s.code);
     const unique = new Set(codes);
     expect(unique.size).toBe(codes.length);
-    for (let i = 1; i <= 15; i++) {
+    for (let i = 1; i <= 36; i++) {
       const code = `SQL-${String(i).padStart(3, '0')}`;
       expect(codes).toContain(code);
     }
@@ -37,7 +37,7 @@ describe('SAMPLES', () => {
     expect(s!.forceEnable).toBe('sql-014');
   });
 
-  it('only SQL-014 has forceEnable in V1.5', () => {
+  it('only SQL-014 has forceEnable in V1.5+', () => {
     const withForce = SAMPLES.filter((s) => s.forceEnable !== undefined);
     expect(withForce.length).toBe(1);
     expect(withForce[0]!.code).toBe('SQL-014');

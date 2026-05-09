@@ -7,7 +7,7 @@
 //
 // This file re-exports the parts that DON'T need libpg-query:
 // rule definitions, the runner, and the public types. Browser
-// consumers (the V1.5 playground) feed an externally-parsed AST
+// consumers (the V1.5+ playground) feed an externally-parsed AST
 // to `runRules` and skip the SDK's parser entirely.
 //
 // Surface is a strict subset of `@vibeguard-dev/local`. Same names,

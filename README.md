@@ -1,7 +1,7 @@
 # VibeGuard — Local
 
 > **Static SQL safety analysis for AI agents.**
-> 15 senior-DBA-level checks. Sub-millisecond. Zero network calls.
+> 36 senior-DBA-level checks. Sub-millisecond. Zero network calls.
 > Runs in your CLI, your editor, or right in the browser.
 
 [![@vibeguard-dev/local](https://img.shields.io/npm/v/@vibeguard-dev/local?label=%40vibeguard-dev%2Flocal)](https://www.npmjs.com/package/@vibeguard-dev/local)
@@ -15,13 +15,13 @@
 
 ## Try it in your browser → [muddysheep.github.io/vibeguard-local](https://muddysheep.github.io/vibeguard-local/)
 
-Paste a SQL query (or pick one of 15 ready-made samples), see what VibeGuard catches in real time. The analyzer runs entirely client-side via WASM — your SQL never leaves the page.
+Paste a SQL query (or pick one of 36 ready-made samples), see what VibeGuard catches in real time. The analyzer runs entirely client-side via WASM — your SQL never leaves the page.
 
 [![VibeGuard playground — dark theme](./docs/img/playground-dark.png)](https://muddysheep.github.io/vibeguard-local/)
 
 **What you can do in the playground**
 
-- **Pick from 15 catch-keyed samples** — one preset per shipped rule (`SQL-001` through `SQL-015`). Click `SQL-013` to see a `DROP TABLE` get blocked. Click `SQL-005` for a `WHERE col = NULL` footgun. The `SQL-014` chip auto-enables the default-OFF "missing RETURNING" rule for that sample.
+- **Pick from 36 catch-keyed samples** — one preset per shipped rule (`SQL-001` through `SQL-036`). Click `SQL-013` to see a `DROP TABLE` get blocked. Click `SQL-005` for a `WHERE col = NULL` footgun. Click `SQL-034` to see `DELETE FROM users WHERE 1=1` get blocked as a tautology in disguise. The `SQL-014` chip auto-enables the default-OFF "missing RETURNING" rule for that sample.
 - **Paste your own SQL** — edits re-analyze on every keystroke. CodeMirror 6 with Postgres syntax highlight, line wrapping, line numbers.
 - **Toggle the AST view** — collapsible JSON tree of the parsed query tree. Useful when a catch surprises you and you want to see what the parser actually saw.
 - **Share via URL** — the `share` button gzips + base64-encodes the editor's contents into the URL hash and copies it to your clipboard. Visiting that URL pre-fills the editor. No backend, no tracking.
@@ -103,9 +103,11 @@ Tokens (dark + light themes), `CatchCard`, `SeverityBadge`, `CodeBlock`, `Nav`, 
 
 ---
 
-## The 15 catches
+## The 36 catches
 
 Each catch has a stable code (e.g. `SQL-001`), a severity, a confidence range, and a docs page. **Catch IDs are forever-stable** — once published, an ID always means the same thing (see [`STABILITY.md`](./packages/sdk/STABILITY.md)).
+
+V1.0–V1.5 shipped 15 catches focused on correctness footguns (cartesian, NULL comparison, missing WHERE). V1.6 adds 21 Postgres-specific catches focused on **destruction, exfiltration, privilege escalation, and analyzer blind spots** (`SQL-016` through `SQL-036`).
 
 | Code | Title | Severity | Confidence | Default | Auto-fix |
 |---|---|---|---|---|---|
@@ -124,6 +126,27 @@ Each catch has a stable code (e.g. `SQL-001`), a severity, a confidence range, a
 | [`SQL-013`](./packages/sdk/docs/rules/sql-013.md) | DROP / TRUNCATE / DDL destruction | block / warn | 85–99 | ON | — |
 | [`SQL-014`](./packages/sdk/docs/rules/sql-014.md) | INSERT/UPDATE/DELETE without RETURNING | info | 50 | **OFF** (opt-in) | — |
 | [`SQL-015`](./packages/sdk/docs/rules/sql-015.md) | `SELECT *` over-fetch | info | 60 | ON | — |
+| [`SQL-016`](./packages/sdk/docs/rules/sql-016.md) | `COPY … FROM/TO PROGRAM` (server-side RCE) | block | 99 | ON | — |
+| [`SQL-017`](./packages/sdk/docs/rules/sql-017.md) | `CREATE EXTENSION` of untrusted procedural language | block | 95 | ON | — |
+| [`SQL-018`](./packages/sdk/docs/rules/sql-018.md) | `ALTER TABLE … DROP COLUMN` (silent data loss) | warn | 90 | ON | — |
+| [`SQL-019`](./packages/sdk/docs/rules/sql-019.md) | `CREATE TRIGGER` (hidden side effects per row) | info | 75 | ON | — |
+| [`SQL-020`](./packages/sdk/docs/rules/sql-020.md) | `CREATE OR REPLACE FUNCTION` (silent overwrite) | info | 70 | ON | — |
+| [`SQL-021`](./packages/sdk/docs/rules/sql-021.md) | `GRANT … TO PUBLIC` (over-broad permission) | warn | 90 | ON | — |
+| [`SQL-022`](./packages/sdk/docs/rules/sql-022.md) | `CREATE/ALTER ROLE … SUPERUSER` (privilege escalation) | block | 95 | ON | — |
+| [`SQL-023`](./packages/sdk/docs/rules/sql-023.md) | `pg_terminate_backend` / `pg_cancel_backend` (DoS) | warn | 85 | ON | — |
+| [`SQL-024`](./packages/sdk/docs/rules/sql-024.md) | `VACUUM FULL` (ACCESS EXCLUSIVE outage) | warn | 80 | ON | — |
+| [`SQL-025`](./packages/sdk/docs/rules/sql-025.md) | `REFRESH MATERIALIZED VIEW` (blocking refresh) | warn | 75 | ON | — |
+| [`SQL-026`](./packages/sdk/docs/rules/sql-026.md) | `MERGE` with tautological `ON` (full-table mutation) | block | 90 | ON | — |
+| [`SQL-027`](./packages/sdk/docs/rules/sql-027.md) | `SET search_path` to attacker-controlled schema | warn | 85 | ON | — |
+| [`SQL-028`](./packages/sdk/docs/rules/sql-028.md) | `pg_create_*_replication_slot` (exfiltration channel) | warn | 80 | ON | — |
+| [`SQL-029`](./packages/sdk/docs/rules/sql-029.md) | `dblink` / `CREATE SERVER` (outbound network) | warn | 80 | ON | — |
+| [`SQL-030`](./packages/sdk/docs/rules/sql-030.md) | `pg_read_*` / `lo_export` / `pg_ls_dir` (server FS) | warn | 90 | ON | — |
+| [`SQL-031`](./packages/sdk/docs/rules/sql-031.md) | `INSERT … SELECT … ON CONFLICT DO UPDATE` (unbounded upsert) | info | 75 | ON | — |
+| [`SQL-032`](./packages/sdk/docs/rules/sql-032.md) | `EXPLAIN ANALYZE` of a destructive statement | info | 80 | ON | — |
+| [`SQL-033`](./packages/sdk/docs/rules/sql-033.md) | `DO $$ … $$` opaque procedural block | info | 70 | ON | — |
+| [`SQL-034`](./packages/sdk/docs/rules/sql-034.md) | `WHERE 1=1` / literal tautology on UPDATE/DELETE | block | 95 | ON | — |
+| [`SQL-035`](./packages/sdk/docs/rules/sql-035.md) | `UPDATE … FROM` without join predicate (cross-join overwrite) | block | 90 | ON | — |
+| [`SQL-036`](./packages/sdk/docs/rules/sql-036.md) | `DELETE … USING` without join predicate (cross-join wipe) | block | 90 | ON | — |
 
 ## What this is NOT
 

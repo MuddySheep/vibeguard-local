@@ -40,6 +40,27 @@ import { SQL_012 } from './sql-012-recursive-cte.js';
 import { SQL_013 } from './sql-013-drop-truncate.js';
 import { SQL_014 } from './sql-014-missing-returning.js';
 import { SQL_015 } from './sql-015-select-star.js';
+import { SQL_016 } from './sql-016-copy-program.js';
+import { SQL_017 } from './sql-017-untrusted-extension.js';
+import { SQL_018 } from './sql-018-drop-column.js';
+import { SQL_019 } from './sql-019-create-trigger.js';
+import { SQL_020 } from './sql-020-create-or-replace-function.js';
+import { SQL_021 } from './sql-021-grant-public.js';
+import { SQL_022 } from './sql-022-superuser-role.js';
+import { SQL_023 } from './sql-023-pg-terminate-backend.js';
+import { SQL_024 } from './sql-024-vacuum-full.js';
+import { SQL_025 } from './sql-025-refresh-matview.js';
+import { SQL_026 } from './sql-026-merge-tautology.js';
+import { SQL_027 } from './sql-027-set-search-path.js';
+import { SQL_028 } from './sql-028-replication-slot.js';
+import { SQL_029 } from './sql-029-dblink-server.js';
+import { SQL_030 } from './sql-030-file-primitives.js';
+import { SQL_031 } from './sql-031-on-conflict-do-update.js';
+import { SQL_032 } from './sql-032-explain-analyze-destructive.js';
+import { SQL_033 } from './sql-033-do-block.js';
+import { SQL_034 } from './sql-034-literal-tautology.js';
+import { SQL_035 } from './sql-035-update-from-no-join.js';
+import { SQL_036 } from './sql-036-delete-using-no-join.js';
 
 /**
  * Metadata-bearing entry in the rule registry. Pairs a rule's
@@ -91,6 +112,27 @@ export const RULE_REGISTRY: readonly RuleEntry[] = [
   { code: 'SQL-013', rule: SQL_013, defaultEnabled: true },
   { code: 'SQL-014', rule: SQL_014, defaultEnabled: false }, // OPT-IN
   { code: 'SQL-015', rule: SQL_015, defaultEnabled: true },
+  { code: 'SQL-016', rule: SQL_016, defaultEnabled: true },
+  { code: 'SQL-017', rule: SQL_017, defaultEnabled: true },
+  { code: 'SQL-018', rule: SQL_018, defaultEnabled: true },
+  { code: 'SQL-019', rule: SQL_019, defaultEnabled: true },
+  { code: 'SQL-020', rule: SQL_020, defaultEnabled: true },
+  { code: 'SQL-021', rule: SQL_021, defaultEnabled: true },
+  { code: 'SQL-022', rule: SQL_022, defaultEnabled: true },
+  { code: 'SQL-023', rule: SQL_023, defaultEnabled: true },
+  { code: 'SQL-024', rule: SQL_024, defaultEnabled: true },
+  { code: 'SQL-025', rule: SQL_025, defaultEnabled: true },
+  { code: 'SQL-026', rule: SQL_026, defaultEnabled: true },
+  { code: 'SQL-027', rule: SQL_027, defaultEnabled: true },
+  { code: 'SQL-028', rule: SQL_028, defaultEnabled: true },
+  { code: 'SQL-029', rule: SQL_029, defaultEnabled: true },
+  { code: 'SQL-030', rule: SQL_030, defaultEnabled: true },
+  { code: 'SQL-031', rule: SQL_031, defaultEnabled: true },
+  { code: 'SQL-032', rule: SQL_032, defaultEnabled: true },
+  { code: 'SQL-033', rule: SQL_033, defaultEnabled: true },
+  { code: 'SQL-034', rule: SQL_034, defaultEnabled: true },
+  { code: 'SQL-035', rule: SQL_035, defaultEnabled: true },
+  { code: 'SQL-036', rule: SQL_036, defaultEnabled: true },
 ] as const;
 
 /**
