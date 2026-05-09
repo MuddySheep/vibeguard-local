@@ -113,7 +113,7 @@ export const RULE_REGISTRY: readonly RuleEntry[] = [
   { code: 'SQL-005', rule: SQL_005, defaultEnabled: true, fixer: SQL_005_FIX },
   { code: 'SQL-006', rule: SQL_006, defaultEnabled: true, fixer: SQL_006_FIX },
   { code: 'SQL-007', rule: SQL_007, defaultEnabled: true },
-  { code: 'SQL-008', rule: SQL_008, defaultEnabled: true, confidenceRange: [75, 85] },
+  { code: 'SQL-008', rule: SQL_008, defaultEnabled: true, confidenceRange: [75, 90] },
   { code: 'SQL-009', rule: SQL_009, defaultEnabled: true },
   { code: 'SQL-010', rule: SQL_010, defaultEnabled: true },
   { code: 'SQL-011', rule: SQL_011, defaultEnabled: true, fixer: SQL_011_FIX },

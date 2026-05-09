@@ -14,20 +14,19 @@ function fire(sql: string) {
 }
 
 // ----------------------------------------------------------------------
-// CASE 1 — runtime-injection shape (severity warn, confidence 85)
+// CASE 1 — runtime-injection shape (severity block, confidence 90 / 80)
 //
-// Every query that fired SQL-008 in v1.5 still fires in v1.6. The
-// (severity, confidence) pair shifted from (block, 90) to (warn, 85)
-// per consumer feedback (documented in CHANGELOG 1.6.0). Fire-or-no-
-// fire behavior on these queries is unchanged.
+// UNCHANGED from v1.5. Every v1.5 SQL-008 positive fixture below
+// asserts the SAME (severity, confidence) it asserted at v1.5. v1.6
+// is purely additive — no fire shape was altered.
 // ----------------------------------------------------------------------
 
 describe('SQL-008 — CASE 1 (runtime): parameter-bearing string concat', () => {
-  it("fires on `name = $1 || '%'` (LIKE-pattern construction)", () => {
+  it("fires block/90 on `name = $1 || '%'` (LIKE-pattern construction)", () => {
     const c = fire("SELECT * FROM users WHERE name = $1 || '%'");
     expect(c?.code).toBe('SQL-008');
-    expect(c?.severity).toBe('warn');
-    expect(c?.confidence).toBe(85);
+    expect(c?.severity).toBe('block');
+    expect(c?.confidence).toBe(90);
     expect(c?.threatCategories).toContain('injection');
   });
 
@@ -59,11 +58,11 @@ describe('SQL-008 — CASE 1 (runtime): parameter-bearing string concat', () => 
     ).toBe('SQL-008');
   });
 
-  it('fires on function-result + literal concat (still warn/85 in v1.6+)', () => {
+  it('fires block/80 on function-result + literal concat (UNCHANGED from v1.5)', () => {
     const c = fire("SELECT col || to_char(now(), 'YYYY-MM-DD') FROM t");
     expect(c?.code).toBe('SQL-008');
-    expect(c?.severity).toBe('warn');
-    expect(c?.confidence).toBe(85);
+    expect(c?.severity).toBe('block');
+    expect(c?.confidence).toBe(80);
   });
 
   it('handles param on left side of concat', () => {
@@ -252,12 +251,12 @@ describe('SQL-008 — edge cases', () => {
   });
 
   it('CASE 1 wins over CASE 2 when both could apply (param + payload literal)', () => {
-    // Has a ParamRef → CASE 1 (warn, 85), even though the literal
+    // Has a ParamRef → CASE 1 (block, 90), even though the literal
     // contains an injection payload signature.
     const c = fire("SELECT * FROM users WHERE name = $1 || ' OR 1=1'");
     expect(c?.code).toBe('SQL-008');
-    expect(c?.severity).toBe('warn');
-    expect(c?.confidence).toBe(85);
+    expect(c?.severity).toBe('block');
+    expect(c?.confidence).toBe(90);
   });
 });
 
@@ -266,13 +265,13 @@ describe('SQL-008 — edge cases', () => {
 // ----------------------------------------------------------------------
 
 describe('SQL-008 — output stability', () => {
-  it('canonical CASE 1 (param-concat) output shape locked', () => {
+  it('canonical CASE 1 (param-concat) output shape locked — UNCHANGED from v1.5', () => {
     const c = fire("SELECT * FROM t WHERE x = $1 || 'suffix'");
     expect(c).toMatchObject({
       code: 'SQL-008',
       title: 'Possible string-concatenation injection',
-      severity: 'warn',
-      confidence: 85,
+      severity: 'block',
+      confidence: 90,
       threatCategories: ['injection'],
     });
     expect(c?.fix).toContain('parameterized');

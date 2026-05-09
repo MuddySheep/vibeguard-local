@@ -151,20 +151,20 @@ Linux for this release. The previous baseline was captured on win32
 - README catch table updated from 15 to 36 rows. The "Known
   limitations" section in `packages/sdk/README.md` was rewritten to
   reflect that literal tautologies are now caught by SQL-034.
-- **SQL-008 — two-tier detection (severity & confidence revised).**
-  Added a CASE 2 (`info` / 75) tier that fires on pure-literal `||`
-  chains when any literal contains an injection-payload signature
+- **SQL-008 expanded to also detect literal-only concatenation
+  containing injection-payload signatures (CASE 2, info/75). Existing
+  CASE 1 behavior unchanged. Purely additive.** The new CASE 2 fires
+  on `||` chains where every operand is a literal A_Const AND at
+  least one literal matches the injection-payload signature regex
   (`OR`/`UNION`/`DROP`/`TRUNCATE`/`DELETE`/`EXEC`/`EXECUTE`, comment
   markers, statement terminators, `1=1` tautology, `''=''` quote
-  evasion). The existing v1.5 runtime-injection fire (param /
-  function-call mix) is now CASE 1 at `warn` / 85 (down from
-  `block` / 90). No v1.5 query that fired SQL-008 stops firing in
-  v1.6 — verified by the v1.5 positive corpus test set. Severity
-  downgrade follows consumer feedback that `block` was over-aggressive
-  given the LIKE-pattern false-positive surface; the new `info` tier
-  surfaces injection-shape footprints (e.g. `'admin' || ' OR 1=1'`)
-  without crying wolf. New `RuleEntry.confidenceRange` field declares
-  SQL-008's `[75, 85]` span. Full trace in
+  evasion). Catches the LLM-authored injection-shape footprint
+  (e.g. `'admin' || ' OR 1=1'`) that's constant-folded at runtime
+  but is the unmistakable signature of injection-style code
+  authoring. CASE 1 (any non-literal operand) remains at `block`/90
+  for param refs and `block`/80 for function-call/other mixes —
+  byte-identical to v1.5. New `RuleEntry.confidenceRange` field
+  declares SQL-008's `[75, 90]` span. Full trace in
   `docs/rules/sql-008.md` and `tests/test-sql-008-string-concat.test.ts`.
 - **`RuleEntry` gains optional `confidenceRange: readonly [number, number]`.**
   Documentation aid for rules that emit at multiple confidence tiers.

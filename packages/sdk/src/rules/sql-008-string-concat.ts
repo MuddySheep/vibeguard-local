@@ -2,13 +2,13 @@
 //
 // Two-tier detection (v1.6+):
 //
-//   CASE 1 — runtime-injection shape   (severity: warn, confidence: 85)
-//     Concat (`||`) where at least one operand is NOT a literal A_Const
-//     and NOT an array literal. Param refs, column refs concatenated
-//     with non-literals, function-call results, sub-selects, etc. all
-//     qualify. This is the actually-exploitable shape — the value
-//     placed into the SQL fragment is not constant-foldable, so an
-//     attacker-controlled value can change the meaning of the query.
+//   CASE 1 — runtime-injection shape   (severity: block, confidence: 90 / 80)
+//     UNCHANGED from v1.5. Concat (`||`) where at least one operand is
+//     NOT a literal A_Const and NOT an array literal. Confidence 90 if
+//     a ParamRef is present, 80 for function-call / other-shape mixes.
+//     This is the actually-exploitable shape — the value placed into
+//     the SQL fragment is not constant-foldable, so an attacker-
+//     controlled value can change the meaning of the query.
 //
 //   CASE 2 — pure-literal injection-payload shape   (severity: info, confidence: 75)
 //     Concat (`||`) where every operand is a literal A_Const, AND at
@@ -39,12 +39,11 @@
 //   literal so payload check doesn't apply) and emits nothing.
 //
 // Stability:
-//   Every query that fired SQL-008 in v1.5 still fires in v1.6.
-//   Confidence and severity for the v1.5 param-bearing fire shifted
-//   from (block, 90) to (warn, 85) per consumer feedback that block
-//   was too aggressive given the LIKE-pattern false-positive surface.
-//   Per STABILITY.md, severity changes on existing catches require
-//   a minor-version bump and CHANGELOG entry — both present in 1.6.0.
+//   v1.6 is purely additive to SQL-008. Every query that fired SQL-008
+//   in v1.5 still fires in v1.6 at the SAME severity (block) and the
+//   SAME confidence (90 for param, 80 for function-call mix). CASE 2
+//   adds a NEW silent → info/75 transition for pure-literal payload-
+//   shape concat — no v1.5 fire shape is altered.
 
 import { astWalk } from '../ast-walk.js';
 import type { Catch, Rule, Severity } from '../types.js';
@@ -52,9 +51,10 @@ import type { Catch, Rule, Severity } from '../types.js';
 type OperandKind = 'literal' | 'param' | 'column' | 'array' | 'other';
 
 interface Hit {
-  readonly tier: 'runtime' | 'payload-shape';
+  readonly tier: 'runtime-param' | 'runtime-mixed' | 'payload-shape';
   readonly confidence: number;
   readonly severity: Severity;
+  readonly hasParam: boolean;
 }
 
 // Injection-payload signatures we look for INSIDE pure-literal concat
@@ -77,29 +77,33 @@ export const SQL_008: Rule = (ast) => {
     // Array operand → assume array concat, not string concat. Skip.
     if (kinds.some((k) => k === 'array')) return 'skip';
 
-    // CASE 1 — any non-literal, non-column-only operand is the
-    // runtime-injection shape. Param OR mixed-with-function-call OR
-    // any 'other' kind. Pure column-only display concat falls through
-    // (handled in the all-literal-or-column branch below).
-    if (kinds.some((k) => k === 'param' || k === 'other')) {
-      hit = { tier: 'runtime', confidence: 85, severity: 'warn' };
+    // CASE 1 (param sub-case) — UNCHANGED from v1.5. Param operand →
+    // confidence 90, severity block.
+    if (kinds.some((k) => k === 'param')) {
+      hit = {
+        tier: 'runtime-param',
+        confidence: 90,
+        severity: 'block',
+        hasParam: true,
+      };
       return 'stop';
     }
 
-    // All operands are columns/literals. Two sub-cases:
-    //   - Pure literal → CASE 2 / CASE 3 distinction by payload regex.
+    // All operands are columns/literals. Three sub-cases:
+    //   - Pure literal + payload signature → CASE 2 (info/75).
+    //   - Pure literal, no signature        → CASE 3 (silent).
     //   - Mixed column + literal (or all column) → display concat,
     //     suppress regardless of literal contents (a column reference
     //     means the value isn't constant-foldable but it also isn't
     //     attacker-built; it's the row's own data).
     if (kinds.every((k) => k === 'literal')) {
-      // Concatenate the literal text and check for payload signature.
       const blob = operands.map(literalText).join(' ');
       if (PAYLOAD_SIGNATURE.test(blob)) {
         hit = {
           tier: 'payload-shape',
           confidence: 75,
           severity: 'info',
+          hasParam: false,
         };
         return 'stop';
       }
@@ -107,29 +111,45 @@ export const SQL_008: Rule = (ast) => {
       return 'skip';
     }
 
-    // Mixed column + literal → display concat. Skip.
-    return 'skip';
+    if (kinds.every((k) => k === 'literal' || k === 'column')) {
+      // Display concat (column refs ± literals, no payload check). Skip.
+      return 'skip';
+    }
+
+    // CASE 1 (mixed sub-case) — UNCHANGED from v1.5. Function-call /
+    // other-shape mix without a param → confidence 80, severity block.
+    hit = {
+      tier: 'runtime-mixed',
+      confidence: 80,
+      severity: 'block',
+      hasParam: false,
+    };
+    return 'stop';
   });
 
   if (!hit) return null;
   const h: Hit = hit;
 
   const detailLead =
-    h.tier === 'runtime'
-      ? 'A string-concatenation operator (`||`) combines a parameter, ' +
-        'function result, or other non-literal expression with other ' +
-        'operands. This is the canonical runtime shape of SQL ' +
-        'injection — the value placed into the SQL fragment is not ' +
-        'constant-foldable, so an attacker-controlled value can ' +
-        'change the meaning of the query.'
-      : 'A string-concatenation operator (`||`) combines literal ' +
+    h.tier === 'payload-shape'
+      ? 'A string-concatenation operator (`||`) combines literal ' +
         'strings, and at least one of those literals contains an ' +
         "injection-payload signature (e.g. `OR`, `1=1`, `--`, `;`). " +
         'The query as written is constant-folded by the parser and ' +
         'is not exploitable at runtime, but the shape is the ' +
         'unmistakable footprint of injection-style code authoring — ' +
         'worth a manual review of how the surrounding code came to ' +
-        'produce this query.';
+        'produce this query.'
+      : h.hasParam
+        ? 'A string-concatenation operator (`||`) combines a parameter ' +
+          'with other operands. This is the canonical shape of SQL ' +
+          'injection — even when the parameter is driver-bound, the ' +
+          'concatenation result may be interpreted as SQL text rather ' +
+          'than as a single value.'
+        : 'A string-concatenation operator (`||`) combines a function ' +
+          'result or other non-literal expression with other operands. ' +
+          'Building SQL fragments via concatenation is a frequent source ' +
+          'of injection vulnerabilities.';
 
   const result: Catch = {
     code: 'SQL-008',
