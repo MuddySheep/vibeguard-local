@@ -259,17 +259,20 @@ Multi-dialect support (MySQL, MariaDB, SQLite) is tracked in [#1](https://github
 ## Repo layout
 
 This repo is a [pnpm workspace](https://pnpm.io/workspaces) with three packages and a playground app:
+
+```text
 vibeguard-local/
 ├── packages/
 │   ├── sdk/              # @vibeguard-dev/local — analyzer + CLI
-│   ├── eslint-plugin/    # eslint-plugin-vibeguard — sql… template-literal rule
+│   ├── eslint-plugin/    # eslint-plugin-vibeguard — sql`…` template-literal rule
 │   └── ui/               # @vibeguard-dev/ui — design system used by the playground
 ├── apps/
 │   └── playground/       # the live web playground at muddysheep.github.io/vibeguard-local
 └── .github/workflows/
-├── ci.yml                  # typecheck + lint + test + build + size on every push
-├── playground-deploy.yml   # build → deploy to GitHub Pages
-└── release.yml             # creates draft GitHub Release on v* tag push
+    ├── ci.yml                  # typecheck + lint + test + build + size on every push
+    ├── playground-deploy.yml   # build → deploy to GitHub Pages
+    └── release.yml             # creates draft GitHub Release on `v*` tag push
+```
 
 `@vibeguard-dev/ui` is published to npm but isn't documented here — it's an internal-shaped package the playground happens to depend on. If you're building a custom dashboard on top of the analyzer and want the same look, see [`packages/ui/README.md`](./packages/ui/README.md). Otherwise, you can ignore it.
 
