@@ -4,7 +4,13 @@
 > VibeGuard Local is the senior DBA review your AI doesn't know it needs.
 
 **36 battle-tested safety checks. Sub-millisecond. 100% local.**
-**Now agent-native** — drop-in `SKILL.md`, stable JSONL output, `--stdin` pipe, and experimental `--reflect` mode so agents actually learn instead of repeating the same dangerous patterns.
+
+🆕 **v1.8 — works with every major coding agent.** One install command and the SQL safety skill drops into Claude Code, Cursor, GitHub Copilot CLI, Google Gemini CLI, Codeium Windsurf, aider, plus any agent that reads `AGENTS.md` (Codex CLI, OpenCode, OpenClaw, Hermes, Pi). Zero per-agent setup.
+
+```bash
+npm install @vibeguard-dev/local libpg-query
+npx vg-local install-skill        # auto-detects every agent on this machine, installs into each
+```
 
 Runs in your editor as you type, in CI before you merge, in the CLI before you migrate, or right in your browser. Nothing ever leaves your machine.
 

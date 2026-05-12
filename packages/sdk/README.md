@@ -9,6 +9,41 @@
 
 ---
 
+## 🆕 v1.8 — works with every major coding agent
+
+**One command auto-installs the SQL safety skill into every agent on your machine:**
+
+```bash
+npm install @vibeguard-dev/local libpg-query
+npx vg-local install-skill         # interactive — prompts before writing anywhere
+```
+
+Supported agents (auto-detected):
+
+| Agent | Detection signal | What gets installed |
+|---|---|---|
+| **Claude Code** (user + project) | `~/.claude/` or `./.claude/` | `skills/vibeguard-sql-safety/SKILL.md` |
+| **Cursor** (legacy + modern) | `.cursorrules` or `.cursor/rules/` | rule file with the SQL safety instruction |
+| **aider** | `CONVENTIONS.md` or `.aider.conf.yml` | block appended to `CONVENTIONS.md` |
+| **GitHub Copilot CLI** | `.github/instructions/` etc. | `.github/instructions/vibeguard-sql-safety.instructions.md` |
+| **Google Gemini CLI** | `gemini.md` or `.gemini/` | block appended to `gemini.md` |
+| **Codeium Windsurf** (legacy + modern) | `.windsurfrules` or `.windsurf/rules/` | rule file with the SQL safety instruction |
+| **AGENTS.md** family — Codex CLI, OpenCode, OpenClaw, Hermes, Pi | `AGENTS.md`, `opencode.json`, `.pi/`, `.openclaw-system.md` | block appended to `AGENTS.md` |
+
+All instruction-file installs are **idempotent** (re-running replaces between marker comments, never duplicates). All file-write decisions are **filesystem-based and conservative** — `install-skill` only writes to harnesses it can auto-detect, and prompts before touching anything unless `--yes` is passed.
+
+After the install, every supported agent reads its instruction file on every prompt and pre-flights SQL through:
+
+```bash
+echo "$SQL" | vg-local analyze --stdin --format=jsonl
+```
+
+Exit code 1 if any `block`-severity catch fires; one JSON object per catch on stdout. The agent gates on that.
+
+→ Detailed install / flag reference: see [Agent skill install](#agent-skill-install-vg-local-install-skill) below.
+
+---
+
 ## What it does
 
 Your AI agent generates a SQL query. Before you run it, `@vibeguard-dev/local`

@@ -13,7 +13,7 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
-## [1.8.0] - 2026-05-11
+## [1.8.0] - 2026-05-12
 
 **Every major agent harness, one command.** No new catches, no
 detection changes. v1.8.0 doubles the install-skill subcommand's
