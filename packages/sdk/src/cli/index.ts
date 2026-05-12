@@ -19,7 +19,7 @@ import { runInit } from './init.js';
 
 // Sync with package.json on each release. Embedded at build time so
 // `vg-local --version` works without reading from disk at runtime.
-const VG_LOCAL_VERSION = '1.6.0';
+const VG_LOCAL_VERSION = '1.7.0';
 
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);

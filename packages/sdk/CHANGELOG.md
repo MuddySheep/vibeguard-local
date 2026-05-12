@@ -13,6 +13,62 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.7.0] - 2026-05-11
+
+**Agent-native output surface.** No new catches, no detection changes.
+This release adds the output formats, drop-in skill file, stdin pipe,
+and experimental reflection mode that turn `@vibeguard-dev/local`
+from a CLI tool into something agent harnesses can ingest
+programmatically. All 36 catches behave identically to 1.6.0; the
+new surface is purely additive.
+
+### Added
+
+- `--format=jsonl` / `--format=ndjson` flag on `vg-local analyze` for
+  machine-readable output. One JSON object per catch on stdout. The
+  two flag values are aliases (same emitter, same bytes). Stable
+  per-line schema with `_schema: "vg-jsonl/1"` versioning tag;
+  documented in [STABILITY.md](./STABILITY.md#jsonl-output-schema).
+- `STABILITY.md` gains a "JSONL output schema" section committing to
+  semver rules for the per-line shape (field removal/rename = major,
+  addition = minor, semantic change = major).
+- Default output (no `--format` flag, or `--format=human`) is
+  unchanged. Parse errors and skip warnings stay on stderr in all
+  formats.
+- `examples/agent-skill/` — drop-in `SKILL.md` plus companion README
+  for Anthropic Skills-compatible harnesses (Claude Code today;
+  portable to Cursor / aider per the README's adaptation notes).
+  Frontmatter uses only `name` + `description` — fields actually
+  shipping in Claude Code today; no aspirational interop is claimed.
+  Pairs with the new `--format=jsonl` mode above for the agent's
+  pre-flight loop.
+- `--stdin` flag on `vg-local analyze` — reads SQL from process stdin
+  instead of expanding a file-glob, so agents and shell pipelines can
+  pre-flight in-memory SQL without writing to a temp file:
+  `echo "$SQL" | vg-local analyze --stdin --format=jsonl`. The "file"
+  field in structured output is `<stdin>`. Mutually exclusive with
+  positional globs, `--fix`, and `--fix-dry-run` (no on-disk file to
+  write back to). `SKILL.md` updated to recommend the pipe pattern
+  over the previous `mktemp` workaround.
+
+### Added (experimental)
+
+- `--reflect` / `--format=reflect` flag on `vg-local analyze` — emits
+  one *reflection* JSON object per catch on stdout, designed for
+  agent episodic-memory / lessons-learned ingestion. Each line
+  includes `pain_score` (0–10), `importance` (0–10), a templated
+  `reflection` paragraph, and a one-line `suggested_lesson` keyed on
+  the catch's stable `code`. **The schema is `vg-reflect/0` and is
+  explicitly NOT under semver commitments yet** — see
+  [STABILITY.md → Reflection output schema (EXPERIMENTAL)](./STABILITY.md#reflection-output-schema-experimental)
+  for the graduation criteria (≥1 external consumer + 30-day field
+  stability hold → promote to `vg-reflect/1` with full semver).
+- `docs/reflect-mode.md` — one-page walkthrough with consumption
+  recipes (`vg-local analyze --reflect | jq -r '.suggested_lesson' >> LESSONS.md`).
+- `--reflect` is mutually exclusive with `--format=human|jsonl|ndjson`
+  — combining them is a usage error (exit 2), matching the existing
+  `--fix` / `--fix-dry-run` mutual-exclusivity precedent.
+
 ## [1.6.0] - 2026-05-09
 
 **Postgres catalog expansion.** 21 new catches (`SQL-016` through

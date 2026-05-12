@@ -86,6 +86,56 @@ vg-local analyze 'src/**/*.sql' --fix
 # have fixers; other rules surface their catches unchanged.
 ```
 
+### Machine-readable output (`--format=jsonl`)
+
+For agent harnesses, CI pipelines, and `jq` users, `analyze` has a
+stable JSONL output mode:
+
+```bash
+vg-local analyze 'src/**/*.sql' --format=jsonl
+# One JSON object per catch on stdout. Parse errors stay on stderr.
+
+vg-local analyze 'src/**/*.sql' --format=jsonl \
+  | jq -c 'select(.severity == "block")'
+# Filter to blocking catches only.
+```
+
+`--format=ndjson` is accepted as an alias and emits the same bytes.
+The per-line schema is stable post-1.7.0 and documented in
+[STABILITY.md](./STABILITY.md#jsonl-output-schema).
+
+#### Pipe from stdin (`--stdin`)
+
+For agents and shell pipelines that have SQL in-memory and don't want
+to write a temp file:
+
+```bash
+echo "$SQL" | vg-local analyze --stdin --format=jsonl
+# Reads SQL from stdin. The "file" field in JSONL output is "<stdin>".
+```
+
+`--stdin` is mutually exclusive with positional globs, `--fix`, and
+`--fix-dry-run` (no on-disk file to write back to). The future
+`--stdin --fix` "stream-rewrite" mode is deliberately out of scope
+for v1.7.
+
+#### Reflect mode (experimental)
+
+`vg-local analyze --reflect` (or `--format=reflect`) emits one
+*reflection* JSON object per catch — designed for agent
+episodic-memory ingestion. Each line includes `pain_score`,
+`importance`, `reflection`, and `suggested_lesson` alongside the
+standard catch metadata. The schema is `vg-reflect/0` and is
+**explicitly NOT under semver commitments yet** — see
+[STABILITY.md → Reflection output schema (EXPERIMENTAL)](./STABILITY.md#reflection-output-schema-experimental)
+for the graduation criteria, and [docs/reflect-mode.md](./docs/reflect-mode.md)
+for consumption recipes.
+
+```bash
+vg-local analyze 'src/**/*.sql' --reflect \
+  | jq -r '"- \(.suggested_lesson)"' >> LESSONS.md
+```
+
 ### ESM
 
 ```ts
@@ -213,6 +263,11 @@ SDK into a common AI tool's pre-execution flow:
 - **Claude Code** — see [`examples/claude-code/`](./examples/claude-code/)
 - **Cursor** — see [`examples/cursor/`](./examples/cursor/)
 - **Replit Agent** — see [`examples/replit-agent/`](./examples/replit-agent/)
+- **Agent skill (drop-in `SKILL.md`)** — see
+  [`examples/agent-skill/`](./examples/agent-skill/). Single-file skill
+  for Anthropic Skills-compatible harnesses (Claude Code today;
+  portable to Cursor / aider per the README's adaptation notes). Pairs
+  with `--format=jsonl` for machine-readable analyzer output.
 
 For in-editor feedback on `` sql`...` `` template literals (with
 `--fix` autofix), see the sibling package
