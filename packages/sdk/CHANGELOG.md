@@ -13,6 +13,72 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.8.0] - 2026-05-11
+
+**Every major agent harness, one command.** No new catches, no
+detection changes. v1.8.0 doubles the install-skill subcommand's
+harness coverage from 5 to 10 via a manifest-driven refactor —
+`npx vg-local install-skill` now auto-detects and installs into
+Claude Code, Cursor, aider, plus GitHub Copilot CLI, Google Gemini
+CLI, Codeium Windsurf, and any harness that reads `AGENTS.md`
+(Codex CLI, OpenCode, OpenClaw, Hermes / Nous Research, Pi /
+Inflection).
+
+### Added
+
+- **5 new install-skill targets** on top of the 5 from v1.7.1:
+  - `agents-md` — writes to `AGENTS.md` (between marker comments).
+    Detected by the presence of `AGENTS.md`, `opencode.json`,
+    `.pi/`, or `.openclaw-system.md`. Consumed by Codex CLI,
+    OpenCode, OpenClaw, Hermes, Pi, and any other harness that
+    reads the `AGENTS.md` convention.
+  - `copilot-cli` — writes
+    `.github/instructions/vibeguard-sql-safety.instructions.md`
+    (GitHub Copilot's path-specific instructions format).
+    Detected by `.github/instructions/`,
+    `.github/copilot-instructions.md`, or `.github/copilot/`.
+  - `gemini` — writes to `gemini.md` (between marker comments).
+    Detected by `gemini.md` or `.gemini/`.
+  - `windsurf-rules-file` — writes to `.windsurfrules` (between
+    marker comments). Codeium Windsurf legacy single-file format.
+  - `windsurf-rules-dir` — writes
+    `.windsurf/rules/vibeguard-sql-safety.md`. Modern Windsurf
+    rules-directory format.
+- **Manifest-driven adapter architecture.** Each harness is a
+  declarative entry in `src/cli/install-skill-adapters.ts`
+  specifying its detection signal, install path, content shape
+  (frontmatter preserved or stripped), and merge policy. Adding
+  a new harness in the future is a single-file change to
+  the manifests module — no changes to `install-skill.ts`.
+
+### Fixed
+
+- None. All v1.7.1 behavior preserved byte-identically: the 5
+  original targets (`claude-user`, `claude-project`,
+  `cursor-rules-file`, `cursor-rules-dir`, `aider`) install to the
+  same paths with the same content and merge policies as v1.7.1.
+  The 25 v1.7.1 install-skill tests continue to pass without
+  modification.
+
+### Notes
+
+- **Standalone-python** harness deliberately excluded. It's a DIY
+  conductor pattern (a `run.py` that calls vg-local from a Python
+  loop), not a skill-file install. The pattern is documented in
+  `examples/agent-skill/README.md` as a manual recipe.
+- **Antigravity** (Google) harness deferred. Detection signal not
+  yet stable in public docs; will land in a future point release
+  as a single manifest addition.
+- **`--with-memory` activation directive** stays opt-in (unchanged
+  from v1.7.1). The subcommand never writes to `CLAUDE.md` without
+  an explicit `--with-memory=user|project` flag or an interactive
+  Yes.
+- **AGENTS.md collision dedup is automatic.** If a project has
+  AGENTS.md plus `opencode.json` plus `.pi/`, the `agents-md`
+  target fires once and the marker-bracketed block in AGENTS.md
+  is the single source of skill content for every AGENTS.md-aware
+  harness in the project.
+
 ## [1.7.1] - 2026-05-11
 
 **Install-recipe fix + activation hardening.** No new catches, no

@@ -45,8 +45,18 @@ import readline from 'node:readline/promises';
 import pc from 'picocolors';
 
 import { SKILL_MD_CONTENT } from './skill-md-content.generated.js';
+import {
+  HARNESS_ADAPTERS,
+  TARGET_IDS,
+  primaryDetectorPath,
+  resolvePathTemplate,
+  type AdapterDetector,
+  type HarnessAdapter,
+  type TargetId,
+} from './install-skill-adapters.js';
 
 export { SKILL_MD_CONTENT };
+export type { TargetId } from './install-skill-adapters.js';
 
 /**
  * The activation directive appended to CLAUDE.md when the user opts
@@ -70,21 +80,6 @@ const SKILL_MARKER_BEGIN = '<!-- vibeguard-skill-begin -->';
 const SKILL_MARKER_END = '<!-- vibeguard-skill-end -->';
 const MEMORY_MARKER_BEGIN = '<!-- vibeguard-memory-begin -->';
 const MEMORY_MARKER_END = '<!-- vibeguard-memory-end -->';
-
-export type TargetId =
-  | 'claude-user'
-  | 'claude-project'
-  | 'cursor-rules-file'
-  | 'cursor-rules-dir'
-  | 'aider';
-
-const TARGET_IDS: readonly TargetId[] = [
-  'claude-user',
-  'claude-project',
-  'cursor-rules-file',
-  'cursor-rules-dir',
-  'aider',
-];
 
 interface InstallTarget {
   readonly id: TargetId;
@@ -222,13 +217,16 @@ export async function runInstallSkill(
       return { exitCode: 1, installed: [], memoryAdded: 'none' };
     }
     out.write(pc.yellow('No agent harnesses detected on this machine.\n\n'));
-    out.write('Manual install — copy the SKILL.md content to one of:\n');
-    out.write(`  ${pc.dim('~/.claude/skills/vibeguard-sql-safety/SKILL.md')}    (Claude Code, user scope)\n`);
-    out.write(`  ${pc.dim('.claude/skills/vibeguard-sql-safety/SKILL.md')}      (Claude Code, project scope)\n`);
-    out.write(`  ${pc.dim('.cursorrules')}                                       (Cursor — append between marker comments)\n`);
-    out.write(`  ${pc.dim('CONVENTIONS.md')}                                     (aider — referenced via \`aider --read CONVENTIONS.md\`)\n\n`);
+    out.write(`The subcommand only writes to harnesses it can see. Manually create one of\n`);
+    out.write(`the marker paths and re-run, or copy the SKILL.md content to a path that\n`);
+    out.write(`matches your harness's convention. Supported harnesses + their markers:\n\n`);
+    for (const adapter of HARNESS_ADAPTERS) {
+      out.write(
+        `  ${pc.dim(adapter.id.padEnd(22))}  ${adapter.description}\n`,
+      );
+    }
     out.write(
-      `The SKILL.md file ships in this package at:\n  ${pc.dim('node_modules/@vibeguard-dev/local/examples/agent-skill/SKILL.md')}\n`,
+      `\nThe SKILL.md file ships in this package at:\n  ${pc.dim('node_modules/@vibeguard-dev/local/examples/agent-skill/SKILL.md')}\n`,
     );
     return { exitCode: 0, installed: [], memoryAdded: 'none' };
   }
@@ -342,106 +340,105 @@ export async function runInstallSkill(
 /* -------------------------------------------------------------------------- */
 /*                              detection                                     */
 /* -------------------------------------------------------------------------- */
+//
+// Manifest-driven. Each adapter in HARNESS_ADAPTERS becomes one
+// InstallTarget. Adding a new harness is a single-file change to
+// install-skill-adapters.ts — no changes here.
 
 async function detectTargets(
   cwd: string,
   homedir: string,
 ): Promise<InstallTarget[]> {
-  const claudeUserDir = path.join(homedir, '.claude');
-  const claudeUserSkillFile = path.join(
-    claudeUserDir,
-    'skills',
-    'vibeguard-sql-safety',
-    'SKILL.md',
+  return Promise.all(
+    HARNESS_ADAPTERS.map(async (adapter) => adapterToTarget(adapter, cwd, homedir)),
   );
+}
 
-  const claudeProjectDir = path.join(cwd, '.claude');
-  const claudeProjectSkillFile = path.join(
-    claudeProjectDir,
-    'skills',
-    'vibeguard-sql-safety',
-    'SKILL.md',
-  );
+async function adapterToTarget(
+  adapter: HarnessAdapter,
+  cwd: string,
+  homedir: string,
+): Promise<InstallTarget> {
+  const detected = await detectorMatches(adapter.detector, cwd, homedir);
+  const destPath = resolvePathTemplate(adapter.install.dest, cwd, homedir);
+  const detectorPath = primaryDetectorPath(adapter.detector, cwd, homedir);
+  return {
+    id: adapter.id,
+    name: adapter.name,
+    scope: adapter.scope,
+    detected,
+    detectorPath,
+    destPath,
+    apply: async (force) => applyAdapter(adapter, cwd, homedir, force),
+  };
+}
 
-  const cursorRulesFile = path.join(cwd, '.cursorrules');
-  const cursorRulesDir = path.join(cwd, '.cursor', 'rules');
-  const cursorRulesDirFile = path.join(
-    cursorRulesDir,
-    'vibeguard-sql-safety.mdc',
-  );
+async function detectorMatches(
+  detector: AdapterDetector,
+  cwd: string,
+  homedir: string,
+): Promise<boolean> {
+  if (detector.kind === 'any-of') {
+    for (const d of detector.detectors) {
+      if (await detectorMatches(d, cwd, homedir)) return true;
+    }
+    return false;
+  }
+  const resolved = resolvePathTemplate(detector.path, cwd, homedir);
+  if (detector.kind === 'dir-exists') {
+    return isDirectory(resolved);
+  }
+  return isRegularFile(resolved);
+}
 
-  const conventionsMd = path.join(cwd, 'CONVENTIONS.md');
-  const aiderConf = path.join(cwd, '.aider.conf.yml');
+async function applyAdapter(
+  adapter: HarnessAdapter,
+  cwd: string,
+  homedir: string,
+  force: boolean,
+): Promise<InstallStatus> {
+  const destPath = resolvePathTemplate(adapter.install.dest, cwd, homedir);
+  const content =
+    adapter.install.content === 'skill-md-full'
+      ? SKILL_MD_CONTENT
+      : stripFrontmatter(SKILL_MD_CONTENT);
 
-  const claudeUserDirExists = await exists(claudeUserDir);
-  const claudeProjectDirExists = await exists(claudeProjectDir);
-  const cursorRulesFileExists = await exists(cursorRulesFile);
-  const cursorRulesDirExists = await exists(cursorRulesDir);
-  const conventionsExists = await exists(conventionsMd);
-  const aiderConfExists = await exists(aiderConf);
+  if (adapter.install.merge === 'append-between-markers') {
+    return appendBetweenMarkers(
+      destPath,
+      content,
+      SKILL_MARKER_BEGIN,
+      SKILL_MARKER_END,
+    );
+  }
 
-  return [
-    {
-      id: 'claude-user',
-      name: 'Claude Code (user)',
-      scope: 'user',
-      detected: claudeUserDirExists,
-      detectorPath: claudeUserDir,
-      destPath: claudeUserSkillFile,
-      apply: async (force) =>
-        writeSkillFile(claudeUserSkillFile, SKILL_MD_CONTENT, force),
-    },
-    {
-      id: 'claude-project',
-      name: 'Claude Code (project)',
-      scope: 'project',
-      detected: claudeProjectDirExists,
-      detectorPath: claudeProjectDir,
-      destPath: claudeProjectSkillFile,
-      apply: async (force) =>
-        writeSkillFile(claudeProjectSkillFile, SKILL_MD_CONTENT, force),
-    },
-    {
-      id: 'cursor-rules-file',
-      name: 'Cursor (.cursorrules)',
-      scope: 'project',
-      detected: cursorRulesFileExists,
-      detectorPath: cursorRulesFile,
-      destPath: cursorRulesFile,
-      apply: async (_force) =>
-        appendBetweenMarkers(
-          cursorRulesFile,
-          stripFrontmatter(SKILL_MD_CONTENT),
-          SKILL_MARKER_BEGIN,
-          SKILL_MARKER_END,
-        ),
-    },
-    {
-      id: 'cursor-rules-dir',
-      name: 'Cursor (.cursor/rules/)',
-      scope: 'project',
-      detected: cursorRulesDirExists,
-      detectorPath: cursorRulesDir,
-      destPath: cursorRulesDirFile,
-      apply: async (force) =>
-        writeSkillFile(cursorRulesDirFile, SKILL_MD_CONTENT, force),
-    },
-    {
-      id: 'aider',
-      name: 'aider (CONVENTIONS.md)',
-      scope: 'project',
-      detected: conventionsExists || aiderConfExists,
-      detectorPath: conventionsMd,
-      destPath: conventionsMd,
-      apply: async (_force) =>
-        appendBetweenMarkers(
-          conventionsMd,
-          stripFrontmatter(SKILL_MD_CONTENT),
-          SKILL_MARKER_BEGIN,
-          SKILL_MARKER_END,
-        ),
-    },
-  ];
+  // 'overwrite' and 'skip-if-exists' share the same writer; the
+  // distinction is just whether --force is implicit. 'overwrite'
+  // always writes; 'skip-if-exists' respects existing files unless
+  // --force is set.
+  const effectiveForce =
+    adapter.install.merge === 'overwrite' ? true : force;
+  return writeSkillFile(destPath, content, effectiveForce);
+}
+
+async function isDirectory(p: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(p);
+    return stat.isDirectory();
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw e;
+  }
+}
+
+async function isRegularFile(p: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(p);
+    return stat.isFile();
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw e;
+  }
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -598,18 +595,16 @@ function printUsage(out: NodeJS.WritableStream): void {
 USAGE
   vg-local install-skill [options]
 
-DETECTION
-  Claude Code (user)        ~/.claude/ exists
-  Claude Code (project)     .claude/ in cwd
-  Cursor (.cursorrules)     .cursorrules in cwd
-  Cursor (.cursor/rules/)   .cursor/rules/ in cwd
-  aider                     CONVENTIONS.md or .aider.conf.yml in cwd
+DETECTION (auto-detected from filesystem markers)
+${HARNESS_ADAPTERS.map(
+  (a) =>
+    `  ${a.id.padEnd(22)} ${a.description}`,
+).join('\n')}
 
 OPTIONS
   -y, --yes                 Skip the confirmation prompt; install to all detected.
       --target=<id>         Install to one specific harness. Valid ids:
-                            claude-user | claude-project | cursor-rules-file |
-                            cursor-rules-dir | aider
+                            ${TARGET_IDS.join(' | ')}
                             By default, the target must be auto-detected;
                             combine with --force to install regardless.
       --force               Overwrite existing files. Combined with --target,

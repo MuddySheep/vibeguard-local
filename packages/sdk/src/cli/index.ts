@@ -22,7 +22,7 @@ import { runInstallSkill } from './install-skill.js';
 
 // Sync with package.json on each release. Embedded at build time so
 // `vg-local --version` works without reading from disk at runtime.
-const VG_LOCAL_VERSION = '1.7.1';
+const VG_LOCAL_VERSION = '1.8.0';
 
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);

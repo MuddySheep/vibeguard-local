@@ -97,31 +97,48 @@ VibeGuard now speaks fluent agent. Four pieces, designed to compose:
 - **[`examples/agent-skill/SKILL.md`](./packages/sdk/examples/agent-skill/SKILL.md)** — drop-in skill file. Frontmatter uses only the fields Claude Code actually parses today (`name`, `description`); body is portable to Cursor / aider per the [companion README](./packages/sdk/examples/agent-skill/README.md). The skill teaches the agent to pre-flight every SQL through `vg-local` before executing.
 - **`--reflect`** *(experimental)* — emits a richer reflection object per catch with `pain_score`, `importance`, `suggested_lesson` and a templated reflection paragraph designed for agent episodic-memory ingestion. Schema is `vg-reflect/0` and is **explicitly not under semver commitments yet**; see [STABILITY.md → Reflection output schema (EXPERIMENTAL)](./packages/sdk/STABILITY.md#reflection-output-schema-experimental) and [docs/reflect-mode.md](./packages/sdk/docs/reflect-mode.md) for the graduation contract and consumption recipes.
 
-### Quick start
-
-One command auto-detects every agent harness on this machine and installs the skill into each. Interactive — prompts before writing.
+### Quick start — one command, every harness
 
 ```bash
 npx vg-local install-skill
 ```
 
-For CI / scripts: `npx vg-local install-skill --yes`. For one specific harness: `--target=claude-user` (or `claude-project`, `cursor-rules-file`, `cursor-rules-dir`, `aider`).
+That auto-detects every agent harness on this machine + project and installs the `vibeguard-sql-safety` skill into each. Interactive — prompts before writing. `--yes` skips the prompt for CI / scripts.
 
-The subcommand also offers (opt-in) a deterministic-activation directive in `CLAUDE.md` — the most reliable way to make the skill fire on every SQL-related prompt:
+**Harnesses supported in v1.8+:**
+
+| Harness | Detection signal | Install destination |
+|---|---|---|
+| **Claude Code** (user) | `~/.claude/` exists | `~/.claude/skills/vibeguard-sql-safety/SKILL.md` |
+| **Claude Code** (project) | `./.claude/` exists | `./.claude/skills/vibeguard-sql-safety/SKILL.md` |
+| **Cursor** (`.cursorrules`) | `.cursorrules` file | appended between marker comments |
+| **Cursor** (`.cursor/rules/`) | `.cursor/rules/` directory | `.cursor/rules/vibeguard-sql-safety.mdc` |
+| **aider** | `CONVENTIONS.md` or `.aider.conf.yml` | appended to `CONVENTIONS.md` |
+| **GitHub Copilot CLI** | `.github/instructions/` etc. | `.github/instructions/vibeguard-sql-safety.instructions.md` |
+| **Google Gemini CLI** | `gemini.md` or `.gemini/` | appended to `gemini.md` |
+| **Codeium Windsurf** (`.windsurfrules`) | `.windsurfrules` file | appended between marker comments |
+| **Codeium Windsurf** (`.windsurf/rules/`) | `.windsurf/rules/` directory | `.windsurf/rules/vibeguard-sql-safety.md` |
+| **AGENTS.md** family — Codex CLI, OpenCode, OpenClaw, Hermes, Pi | `AGENTS.md`, `opencode.json`, `.pi/`, or `.openclaw-system.md` | appended to `AGENTS.md` between marker comments |
+
+For deterministic activation in Claude Code (everywhere else it's already deterministic — they read the instruction file on every prompt), opt in to a `CLAUDE.md` memory directive:
 
 ```bash
 npx vg-local install-skill --yes --with-memory=user
 # or --with-memory=project for project-scoped activation
 ```
 
-Manual install (if you prefer not to use the subcommand): the SKILL.md file ships in the tarball at `node_modules/@vibeguard-dev/local/examples/agent-skill/SKILL.md`. Copy it to:
+**Restrict to one specific harness:**
 
-| Harness | Path |
-|---|---|
-| Claude Code (user scope) | `~/.claude/skills/vibeguard-sql-safety/SKILL.md` |
-| Claude Code (project) | `.claude/skills/vibeguard-sql-safety/SKILL.md` |
-| Cursor | append between `<!-- vibeguard-skill-begin -->` / `<!-- vibeguard-skill-end -->` markers in `.cursorrules`, OR drop in `.cursor/rules/vibeguard-sql-safety.mdc` |
-| aider | append to `CONVENTIONS.md`, reference via `aider --read CONVENTIONS.md` |
+```bash
+npx vg-local install-skill --target=claude-user
+# valid target ids: claude-user, claude-project, cursor-rules-file,
+#                   cursor-rules-dir, aider, agents-md, copilot-cli,
+#                   gemini, windsurf-rules-file, windsurf-rules-dir
+```
+
+**Idempotent.** All file-append targets use marker comments (`<!-- vibeguard-skill-begin -->` / `<!-- vibeguard-skill-end -->`); re-running install replaces between markers rather than duplicating.
+
+**Manual install** (if you prefer not to use the subcommand): the SKILL.md ships in the tarball at `node_modules/@vibeguard-dev/local/examples/agent-skill/SKILL.md`. Copy it to whichever path matches your harness from the table above.
 
 The agent's pre-flight call from then on:
 

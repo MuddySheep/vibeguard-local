@@ -88,29 +88,47 @@ vg-local analyze 'src/**/*.sql' --fix
 
 ### Agent skill install (`vg-local install-skill`)
 
-One command auto-detects agent harnesses (Claude Code, Cursor, aider)
-on the current machine and project, and installs the
-`vibeguard-sql-safety` skill into each:
+One command auto-detects every agent harness on the current machine
++ project and installs the `vibeguard-sql-safety` skill into each:
 
 ```bash
 npx vg-local install-skill          # interactive
 npx vg-local install-skill --yes    # non-interactive (CI / scripts)
 ```
 
-For deterministic activation in Claude Code, opt in to a `CLAUDE.md`
-memory directive (the most reliable activation lever — Claude's
-description-based skill routing is best-effort):
+**Harnesses supported in v1.8+:** Claude Code (user + project),
+Cursor (`.cursorrules` and `.cursor/rules/`), aider (`CONVENTIONS.md`),
+GitHub Copilot CLI (`.github/instructions/`), Google Gemini CLI
+(`gemini.md`), Codeium Windsurf (`.windsurfrules` and
+`.windsurf/rules/`), and any harness that reads `AGENTS.md` — Codex
+CLI, OpenCode, OpenClaw, Hermes (Nous Research), Pi (Inflection).
+
+10 distinct target ids; detection is filesystem-based (the subcommand
+looks for each harness's marker file or directory). Run
+`vg-local install-skill --help` for the full detection signal list.
+
+For deterministic activation in Claude Code (the only harness where
+description-based routing is best-effort — every other supported
+harness reads its instruction file on every prompt by construction),
+opt in to a `CLAUDE.md` memory directive:
 
 ```bash
 npx vg-local install-skill --yes --with-memory=user
 # or --with-memory=project for project-scoped activation
 ```
 
-Restrict to one specific harness: `--target=claude-user` (or
-`claude-project`, `cursor-rules-file`, `cursor-rules-dir`, `aider`).
-Idempotent — re-running replaces content between marker comments,
-never duplicates. See `vg-local install-skill --help` for the full
-option list.
+Restrict to one specific harness:
+
+```bash
+npx vg-local install-skill --target=copilot-cli
+# valid: claude-user | claude-project | cursor-rules-file |
+#        cursor-rules-dir | aider | agents-md | copilot-cli |
+#        gemini | windsurf-rules-file | windsurf-rules-dir
+```
+
+Idempotent — all file-append targets use marker comments
+(`<!-- vibeguard-skill-begin -->` / `<!-- vibeguard-skill-end -->`);
+re-running replaces between markers, never duplicates.
 
 The `SKILL.md` file also ships in the npm tarball at
 `node_modules/@vibeguard-dev/local/examples/agent-skill/SKILL.md` for

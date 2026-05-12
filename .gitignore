@@ -60,3 +60,10 @@ docs/stories/
 
 # Local prompt drops — never commit
 attached_assets/
+
+# Local adapter-manifest exploration material. Under review for a
+# future story (probably v1.7.2 or v1.8.0) that builds on the
+# existing v1.7.1 install-skill subcommand. Until that story lands,
+# the content here is local-only; nothing ships from these paths.
+packages/sdk/docs/.agent/
+packages/sdk/docs/adapters/

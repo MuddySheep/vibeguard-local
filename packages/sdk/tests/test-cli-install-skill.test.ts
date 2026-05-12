@@ -371,6 +371,25 @@ describe('runInstallSkill — flag parsing', () => {
     expect(stdoutText()).toContain('--with-memory');
   });
 
+  it('--help lists every supported target id', async () => {
+    await runInstallSkill(['--help'], callOptions() as never);
+    const help = stdoutText();
+    for (const id of [
+      'claude-user',
+      'claude-project',
+      'cursor-rules-file',
+      'cursor-rules-dir',
+      'aider',
+      'agents-md',
+      'copilot-cli',
+      'gemini',
+      'windsurf-rules-file',
+      'windsurf-rules-dir',
+    ]) {
+      expect(help).toContain(id);
+    }
+  });
+
   it('unknown argument → exit 2 with usage hint', async () => {
     const r = await runInstallSkill(['--quack'], callOptions() as never);
     expect(r.exitCode).toBe(2);
@@ -385,5 +404,182 @@ describe('runInstallSkill — flag parsing', () => {
     );
     expect(r.exitCode).toBe(2);
     expect(stderrText()).toContain('unknown --with-memory');
+  });
+
+  it('unknown --target lists all 10 valid ids in the error', async () => {
+    const r = await runInstallSkill(
+      ['--target=quackquack'],
+      { ...callOptions(), target: undefined } as never,
+    );
+    expect(r.exitCode).toBe(2);
+    const stderr = stderrText();
+    for (const id of [
+      'claude-user',
+      'agents-md',
+      'copilot-cli',
+      'gemini',
+      'windsurf-rules-file',
+      'windsurf-rules-dir',
+    ]) {
+      expect(stderr).toContain(id);
+    }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/*                  v1.8.0 — new harnesses (manifest-driven)                  */
+/* -------------------------------------------------------------------------- */
+
+describe('runInstallSkill — v1.8.0 new harnesses', () => {
+  it('agents-md: detects via AGENTS.md presence; appends between markers', async () => {
+    await fs.writeFile(path.join(tmpDir, 'AGENTS.md'), '# Existing agents\n', 'utf8');
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['agents-md']);
+    const content = await readUtf8(path.join(tmpDir, 'AGENTS.md'));
+    expect(content).toContain('# Existing agents');
+    expect(content).toContain('<!-- vibeguard-skill-begin -->');
+    expect(content).toContain('<!-- vibeguard-skill-end -->');
+    // Frontmatter stripped — AGENTS.md doesn't parse YAML.
+    expect(content).not.toContain('---\nname: vibeguard-sql-safety');
+  });
+
+  it('agents-md: detects via opencode.json (no AGENTS.md present)', async () => {
+    await fs.writeFile(path.join(tmpDir, 'opencode.json'), '{}\n', 'utf8');
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['agents-md']);
+    expect(await fileExists(path.join(tmpDir, 'AGENTS.md'))).toBe(true);
+  });
+
+  it('agents-md: detects via .pi/ directory', async () => {
+    await fs.mkdir(path.join(tmpDir, '.pi'), { recursive: true });
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['agents-md']);
+  });
+
+  it('agents-md: detects via .openclaw-system.md', async () => {
+    await fs.writeFile(path.join(tmpDir, '.openclaw-system.md'), 'system\n', 'utf8');
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['agents-md']);
+  });
+
+  it('agents-md: re-running does not duplicate the marker block', async () => {
+    await fs.writeFile(path.join(tmpDir, 'AGENTS.md'), '# Original\n', 'utf8');
+    await runInstallSkill([], callOptions() as never);
+    await runInstallSkill([], callOptions() as never);
+    const content = await readUtf8(path.join(tmpDir, 'AGENTS.md'));
+    const beginCount = content.split('<!-- vibeguard-skill-begin -->').length - 1;
+    expect(beginCount).toBe(1);
+    expect(content).toContain('# Original');
+  });
+
+  it('copilot-cli: detects via .github/instructions/ and writes the path-specific file', async () => {
+    await fs.mkdir(path.join(tmpDir, '.github', 'instructions'), { recursive: true });
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toContain('copilot-cli');
+    const target = path.join(
+      tmpDir,
+      '.github',
+      'instructions',
+      'vibeguard-sql-safety.instructions.md',
+    );
+    expect(await fileExists(target)).toBe(true);
+    // Body-only — no YAML frontmatter (Copilot CLI doesn't parse it).
+    const content = await readUtf8(target);
+    expect(content).not.toContain('---\nname: vibeguard-sql-safety');
+    expect(content).toContain('# vibeguard-sql-safety');
+  });
+
+  it('copilot-cli: detects via .github/copilot-instructions.md', async () => {
+    await fs.mkdir(path.join(tmpDir, '.github'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.github', 'copilot-instructions.md'),
+      '# existing\n',
+      'utf8',
+    );
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toContain('copilot-cli');
+  });
+
+  it('gemini: detects via gemini.md and appends between markers', async () => {
+    await fs.writeFile(path.join(tmpDir, 'gemini.md'), '# Project rules\n', 'utf8');
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['gemini']);
+    const content = await readUtf8(path.join(tmpDir, 'gemini.md'));
+    expect(content).toContain('# Project rules');
+    expect(content).toContain('<!-- vibeguard-skill-begin -->');
+    expect(content).not.toContain('---\nname: vibeguard-sql-safety');
+  });
+
+  it('gemini: detects via .gemini/ directory', async () => {
+    await fs.mkdir(path.join(tmpDir, '.gemini'), { recursive: true });
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['gemini']);
+    // gemini.md is created fresh because the dir alone doesn't tell
+    // us where else to write.
+    expect(await fileExists(path.join(tmpDir, 'gemini.md'))).toBe(true);
+  });
+
+  it('windsurf-rules-file: detects .windsurfrules and appends between markers', async () => {
+    await fs.writeFile(path.join(tmpDir, '.windsurfrules'), '# Existing\n', 'utf8');
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['windsurf-rules-file']);
+    const content = await readUtf8(path.join(tmpDir, '.windsurfrules'));
+    expect(content).toContain('# Existing');
+    expect(content).toContain('<!-- vibeguard-skill-begin -->');
+    expect(content).not.toContain('---\nname: vibeguard-sql-safety');
+  });
+
+  it('windsurf-rules-dir: writes vibeguard-sql-safety.md (no frontmatter)', async () => {
+    await fs.mkdir(path.join(tmpDir, '.windsurf', 'rules'), { recursive: true });
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['windsurf-rules-dir']);
+    const target = path.join(
+      tmpDir,
+      '.windsurf',
+      'rules',
+      'vibeguard-sql-safety.md',
+    );
+    expect(await fileExists(target)).toBe(true);
+    const content = await readUtf8(target);
+    expect(content).not.toContain('---\nname: vibeguard-sql-safety');
+    expect(content).toContain('# vibeguard-sql-safety');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/*                  multi-harness AGENTS.md dedup                             */
+/* -------------------------------------------------------------------------- */
+
+describe('runInstallSkill — multi-harness scenarios', () => {
+  it('claude-user + agents-md + gemini all install in one run', async () => {
+    await fs.mkdir(path.join(tmpHome, '.claude'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, 'AGENTS.md'), '', 'utf8');
+    await fs.writeFile(path.join(tmpDir, 'gemini.md'), '', 'utf8');
+
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed.sort()).toEqual(['agents-md', 'claude-user', 'gemini'].sort());
+
+    // All three files have the skill content.
+    expect(await fileExists(
+      path.join(tmpHome, '.claude', 'skills', 'vibeguard-sql-safety', 'SKILL.md'),
+    )).toBe(true);
+
+    const agentsContent = await readUtf8(path.join(tmpDir, 'AGENTS.md'));
+    expect(agentsContent).toContain('<!-- vibeguard-skill-begin -->');
+
+    const geminiContent = await readUtf8(path.join(tmpDir, 'gemini.md'));
+    expect(geminiContent).toContain('<!-- vibeguard-skill-begin -->');
+  });
+
+  it('--target=agents-md alone, with detection signal, installs only there', async () => {
+    await fs.writeFile(path.join(tmpDir, 'AGENTS.md'), '', 'utf8');
+    await fs.writeFile(path.join(tmpDir, 'gemini.md'), '', 'utf8');  // also detected
+    const r = await runInstallSkill(
+      ['--target=agents-md'],
+      callOptions({ target: 'agents-md' }) as never,
+    );
+    expect(r.installed).toEqual(['agents-md']);
+    // gemini.md should NOT have been touched (still empty)
+    expect(await readUtf8(path.join(tmpDir, 'gemini.md'))).toBe('');
   });
 });
