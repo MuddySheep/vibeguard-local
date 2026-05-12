@@ -1,0 +1,389 @@
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  runInstallSkill,
+  SKILL_MD_CONTENT,
+  ACTIVATION_MEMORY_LINE,
+} from '../src/cli/install-skill.js';
+
+// EPIC-OSS-5 / STORY-5.5 — install-skill subcommand.
+//
+// Three layers of coverage:
+//   1. Drift prevention: SKILL_MD_CONTENT inline matches the file
+//      on disk byte-for-byte. (The generator + this assertion together
+//      guarantee no silent drift.)
+//   2. Detection: each harness is recognized from its filesystem
+//      marker when we mock cwd / homedir to point at a temp tree.
+//   3. Install: the right file lands at the right path; idempotency
+//      and --force overwrite behavior both hold.
+//
+// All tests use a temp cwd and a temp homedir so we never touch the
+// real ~/.claude or the developer's working directory.
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_ROOT = path.resolve(HERE, '..');
+const SKILL_MD_SOURCE_PATH = path.join(
+  PACKAGE_ROOT,
+  'examples',
+  'agent-skill',
+  'SKILL.md',
+);
+
+let tmpDir: string;
+let tmpHome: string;
+let stdoutCalls: string[];
+let stderrCalls: string[];
+
+beforeEach(async () => {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vg-install-cwd-'));
+  tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), 'vg-install-home-'));
+  stdoutCalls = [];
+  stderrCalls = [];
+  vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+    stdoutCalls.push(typeof chunk === 'string' ? chunk : chunk.toString());
+    return true;
+  });
+  vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+    stderrCalls.push(typeof chunk === 'string' ? chunk : chunk.toString());
+    return true;
+  });
+});
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  try {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  } catch {
+    /* */
+  }
+  try {
+    await fs.rm(tmpHome, { recursive: true, force: true });
+  } catch {
+    /* */
+  }
+});
+
+function stdoutText(): string {
+  return stdoutCalls.join('');
+}
+function stderrText(): string {
+  return stderrCalls.join('');
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await fs.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readUtf8(p: string): Promise<string> {
+  return fs.readFile(p, 'utf8');
+}
+
+/**
+ * Captures stdout/stderr into per-call buffers so we can assert on
+ * them. Defaults --yes to true so the tests don't hang on interactive
+ * prompts.
+ */
+function callOptions(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    cwd: tmpDir,
+    homedir: tmpHome,
+    out: { write: (c: string | Buffer) => { stdoutCalls.push(typeof c === 'string' ? c : c.toString()); return true; } },
+    err: { write: (c: string | Buffer) => { stderrCalls.push(typeof c === 'string' ? c : c.toString()); return true; } },
+    yes: true,
+    noMemory: true,
+    ...extra,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*                          drift-prevention                                  */
+/* -------------------------------------------------------------------------- */
+
+describe('SKILL_MD_CONTENT — drift prevention', () => {
+  it('inlined constant matches examples/agent-skill/SKILL.md byte-for-byte', async () => {
+    const onDisk = await fs.readFile(SKILL_MD_SOURCE_PATH, 'utf8');
+    expect(SKILL_MD_CONTENT).toBe(onDisk);
+  });
+
+  it('content begins with the YAML frontmatter fence', () => {
+    expect(SKILL_MD_CONTENT.startsWith('---\n')).toBe(true);
+  });
+
+  it('content contains the mandatory-activation directive in the description', () => {
+    expect(SKILL_MD_CONTENT).toContain('MANDATORY pre-flight for ALL SQL operations');
+  });
+
+  it('content contains the autofix loop section', () => {
+    expect(SKILL_MD_CONTENT).toContain('## The autofix loop');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/*                          detection                                         */
+/* -------------------------------------------------------------------------- */
+
+describe('runInstallSkill — detection', () => {
+  it('with nothing on disk → prints "no harnesses found", exit 0', async () => {
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.exitCode).toBe(0);
+    expect(r.installed).toEqual([]);
+    expect(stdoutText()).toContain('No agent harnesses detected');
+  });
+
+  it('detects Claude Code user scope when ~/.claude exists', async () => {
+    await fs.mkdir(path.join(tmpHome, '.claude'), { recursive: true });
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.exitCode).toBe(0);
+    expect(r.installed).toEqual(['claude-user']);
+    const written = path.join(
+      tmpHome,
+      '.claude',
+      'skills',
+      'vibeguard-sql-safety',
+      'SKILL.md',
+    );
+    expect(await fileExists(written)).toBe(true);
+    expect(await readUtf8(written)).toBe(SKILL_MD_CONTENT);
+  });
+
+  it('detects Claude Code project scope when ./.claude exists', async () => {
+    await fs.mkdir(path.join(tmpDir, '.claude'), { recursive: true });
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['claude-project']);
+    expect(await fileExists(
+      path.join(tmpDir, '.claude', 'skills', 'vibeguard-sql-safety', 'SKILL.md'),
+    )).toBe(true);
+  });
+
+  it('detects .cursorrules in cwd', async () => {
+    await fs.writeFile(path.join(tmpDir, '.cursorrules'), '# existing\n', 'utf8');
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['cursor-rules-file']);
+    const updated = await readUtf8(path.join(tmpDir, '.cursorrules'));
+    expect(updated).toContain('# existing');
+    expect(updated).toContain('<!-- vibeguard-skill-begin -->');
+    expect(updated).toContain('<!-- vibeguard-skill-end -->');
+    // Frontmatter must be stripped for .cursorrules.
+    expect(updated).not.toContain('---\nname: vibeguard-sql-safety');
+  });
+
+  it('detects .cursor/rules/ directory', async () => {
+    await fs.mkdir(path.join(tmpDir, '.cursor', 'rules'), { recursive: true });
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['cursor-rules-dir']);
+    const mdc = path.join(tmpDir, '.cursor', 'rules', 'vibeguard-sql-safety.mdc');
+    expect(await fileExists(mdc)).toBe(true);
+    // Frontmatter is preserved for the .mdc variant.
+    expect(await readUtf8(mdc)).toBe(SKILL_MD_CONTENT);
+  });
+
+  it('detects aider via CONVENTIONS.md', async () => {
+    await fs.writeFile(path.join(tmpDir, 'CONVENTIONS.md'), '# Project conventions\n', 'utf8');
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['aider']);
+    const updated = await readUtf8(path.join(tmpDir, 'CONVENTIONS.md'));
+    expect(updated).toContain('# Project conventions');
+    expect(updated).toContain('<!-- vibeguard-skill-begin -->');
+    // Frontmatter stripped for CONVENTIONS.md too.
+    expect(updated).not.toContain('---\nname: vibeguard-sql-safety');
+  });
+
+  it('detects aider via .aider.conf.yml', async () => {
+    await fs.writeFile(path.join(tmpDir, '.aider.conf.yml'), 'auto-commits: false\n', 'utf8');
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual(['aider']);
+    // CONVENTIONS.md is created fresh because .aider.conf.yml only signals
+    // aider's presence, not where the conventions live.
+    expect(await fileExists(path.join(tmpDir, 'CONVENTIONS.md'))).toBe(true);
+  });
+
+  it('detects multiple harnesses simultaneously', async () => {
+    await fs.mkdir(path.join(tmpHome, '.claude'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.cursorrules'), '', 'utf8');
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed.sort()).toEqual(['claude-user', 'cursor-rules-file'].sort());
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/*                          idempotency                                       */
+/* -------------------------------------------------------------------------- */
+
+describe('runInstallSkill — idempotency', () => {
+  it('re-running with .cursorrules does not duplicate the skill block', async () => {
+    await fs.writeFile(path.join(tmpDir, '.cursorrules'), '# original\n', 'utf8');
+    await runInstallSkill([], callOptions() as never);
+    await runInstallSkill([], callOptions() as never);
+    const final = await readUtf8(path.join(tmpDir, '.cursorrules'));
+    const beginCount = final.split('<!-- vibeguard-skill-begin -->').length - 1;
+    const endCount = final.split('<!-- vibeguard-skill-end -->').length - 1;
+    expect(beginCount).toBe(1);
+    expect(endCount).toBe(1);
+    expect(final).toContain('# original');
+  });
+
+  it('re-running with claude-user without --force skips on second run', async () => {
+    await fs.mkdir(path.join(tmpHome, '.claude'), { recursive: true });
+    await runInstallSkill([], callOptions() as never);
+    const claudeFile = path.join(
+      tmpHome, '.claude', 'skills', 'vibeguard-sql-safety', 'SKILL.md',
+    );
+    const firstWriteContent = await readUtf8(claudeFile);
+
+    // Mutate the file so we can tell if it gets overwritten.
+    await fs.writeFile(claudeFile, '# user-edited\n', 'utf8');
+
+    stdoutCalls = []; stderrCalls = [];
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.installed).toEqual([]);  // skipped, not installed
+    expect(stdoutText()).toContain('skipped');
+    expect(await readUtf8(claudeFile)).toBe('# user-edited\n');
+
+    // With --force, the install proceeds.
+    stdoutCalls = []; stderrCalls = [];
+    const r2 = await runInstallSkill(['--force'], callOptions({ force: true }) as never);
+    expect(r2.installed).toEqual(['claude-user']);
+    expect(await readUtf8(claudeFile)).toBe(firstWriteContent);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/*                          --target restriction                              */
+/* -------------------------------------------------------------------------- */
+
+describe('runInstallSkill — --target', () => {
+  it('--target=claude-user installs only there even when other harnesses are detected', async () => {
+    await fs.mkdir(path.join(tmpHome, '.claude'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, '.cursorrules'), '', 'utf8');
+    const r = await runInstallSkill(
+      ['--target=claude-user'],
+      callOptions({ target: 'claude-user' }) as never,
+    );
+    expect(r.installed).toEqual(['claude-user']);
+    // .cursorrules should NOT have been touched
+    expect(await readUtf8(path.join(tmpDir, '.cursorrules'))).toBe('');
+  });
+
+  it('--target=claude-user when not detected → exit 1', async () => {
+    const r = await runInstallSkill(
+      ['--target=claude-user'],
+      callOptions({ target: 'claude-user' }) as never,
+    );
+    expect(r.exitCode).toBe(1);
+    expect(stderrText()).toContain('not present');
+  });
+
+  it('--target=<unknown> → exit 2 with usage error', async () => {
+    // Pass via args (not options) so the arg parser sees it.
+    const r = await runInstallSkill(
+      ['--target=quackquack'],
+      { ...callOptions(), target: undefined } as never,
+    );
+    expect(r.exitCode).toBe(2);
+    expect(stderrText()).toContain('unknown --target');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/*                          --with-memory                                     */
+/* -------------------------------------------------------------------------- */
+
+describe('runInstallSkill — CLAUDE.md memory line', () => {
+  it('default mode (no flag, non-interactive) does NOT touch CLAUDE.md', async () => {
+    await fs.mkdir(path.join(tmpHome, '.claude'), { recursive: true });
+    const r = await runInstallSkill([], callOptions() as never);
+    expect(r.memoryAdded).toBe('none');
+    expect(await fileExists(path.join(tmpHome, '.claude', 'CLAUDE.md'))).toBe(false);
+    expect(await fileExists(path.join(tmpDir, 'CLAUDE.md'))).toBe(false);
+  });
+
+  it('--with-memory=user appends to ~/.claude/CLAUDE.md', async () => {
+    await fs.mkdir(path.join(tmpHome, '.claude'), { recursive: true });
+    const r = await runInstallSkill(
+      [],
+      callOptions({ withMemory: 'user', noMemory: false }) as never,
+    );
+    expect(r.memoryAdded).toBe('user');
+    const memPath = path.join(tmpHome, '.claude', 'CLAUDE.md');
+    expect(await fileExists(memPath)).toBe(true);
+    const content = await readUtf8(memPath);
+    expect(content).toContain('<!-- vibeguard-memory-begin -->');
+    expect(content).toContain('<!-- vibeguard-memory-end -->');
+    expect(content).toContain(ACTIVATION_MEMORY_LINE);
+  });
+
+  it('--with-memory=project appends to ./CLAUDE.md', async () => {
+    await fs.mkdir(path.join(tmpHome, '.claude'), { recursive: true });
+    const r = await runInstallSkill(
+      [],
+      callOptions({ withMemory: 'project', noMemory: false }) as never,
+    );
+    expect(r.memoryAdded).toBe('project');
+    expect(await fileExists(path.join(tmpDir, 'CLAUDE.md'))).toBe(true);
+    expect(await fileExists(path.join(tmpHome, '.claude', 'CLAUDE.md'))).toBe(false);
+  });
+
+  it('re-running --with-memory does not duplicate the line', async () => {
+    await fs.mkdir(path.join(tmpHome, '.claude'), { recursive: true });
+    await runInstallSkill(
+      [],
+      callOptions({ withMemory: 'user', noMemory: false }) as never,
+    );
+    await runInstallSkill(
+      [],
+      callOptions({ withMemory: 'user', noMemory: false }) as never,
+    );
+    const content = await readUtf8(path.join(tmpHome, '.claude', 'CLAUDE.md'));
+    const beginCount = content.split('<!-- vibeguard-memory-begin -->').length - 1;
+    expect(beginCount).toBe(1);
+  });
+
+  it('--with-memory + --no-memory → exit 2', async () => {
+    await fs.mkdir(path.join(tmpHome, '.claude'), { recursive: true });
+    const r = await runInstallSkill(
+      [],
+      callOptions({ withMemory: 'user', noMemory: true }) as never,
+    );
+    expect(r.exitCode).toBe(2);
+    expect(stderrText()).toContain('mutually exclusive');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/*                          flag parsing edges                                */
+/* -------------------------------------------------------------------------- */
+
+describe('runInstallSkill — flag parsing', () => {
+  it('--help prints usage and exits 0', async () => {
+    const r = await runInstallSkill(['--help'], callOptions() as never);
+    expect(r.exitCode).toBe(0);
+    expect(stdoutText()).toContain('install vibeguard-sql-safety');
+    expect(stdoutText()).toContain('--with-memory');
+  });
+
+  it('unknown argument → exit 2 with usage hint', async () => {
+    const r = await runInstallSkill(['--quack'], callOptions() as never);
+    expect(r.exitCode).toBe(2);
+    expect(stderrText()).toContain('unknown argument');
+  });
+
+  it('--with-memory=invalid → exit 2', async () => {
+    const r = await runInstallSkill(
+      ['--with-memory=somewhere'],
+      // Drop the option-level withMemory so the arg parser sees it.
+      { ...callOptions(), withMemory: undefined } as never,
+    );
+    expect(r.exitCode).toBe(2);
+    expect(stderrText()).toContain('unknown --with-memory');
+  });
+});

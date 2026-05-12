@@ -1,6 +1,6 @@
 {
   "name": "@vibeguard-dev/local",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Static SQL safety analysis for AI agents — catch dangerous queries before they reach your database.",
   "keywords": [
     "sql",
@@ -44,11 +44,16 @@
   },
   "files": [
     "dist",
+    "examples/agent-skill/SKILL.md",
     "LICENSE",
     "NOTICE",
     "README.md"
   ],
   "scripts": {
+    "generate:skill-content": "node scripts/generate-skill-content.mjs",
+    "prebuild": "node scripts/generate-skill-content.mjs",
+    "pretest": "node scripts/generate-skill-content.mjs",
+    "pretypecheck": "node scripts/generate-skill-content.mjs",
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",

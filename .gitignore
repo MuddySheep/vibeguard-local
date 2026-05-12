@@ -35,6 +35,11 @@ bun.lockb
 *.tgz
 .tsimp/
 
+# Generated source files — regenerated from canonical sources at
+# prebuild / pretest / pretypecheck time. Never edit by hand;
+# never commit.
+**/*.generated.ts
+
 # Local smoke-install scratch (kept out of git; recreated each phase)
 .smoke-*/
 

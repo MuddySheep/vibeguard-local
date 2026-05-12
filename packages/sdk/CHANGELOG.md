@@ -13,6 +13,79 @@ Future changes will land here. New catches go through the proposal
 process in [CONTRIBUTING.md](./CONTRIBUTING.md). Major versions ship
 at most once a quarter; no surprise breaking changes.
 
+## [1.7.1] - 2026-05-11
+
+**Install-recipe fix + activation hardening.** No new catches, no
+detection changes. This patch closes two real gaps in 1.7.0 that
+landed in the same release: the README documented an install path
+that didn't work, and the SKILL.md description was too soft to drive
+deterministic activation in Claude Code.
+
+### Fixed
+
+- **`examples/agent-skill/SKILL.md` is now included in the npm
+  tarball.** 1.7.0 excluded it via the `package.json` `files` field,
+  which made the README's
+  `cp node_modules/@vibeguard-dev/local/examples/agent-skill/SKILL.md ...`
+  install recipe fail with "file not found" for every user who
+  followed it. The tarball now ships the file at the same documented
+  path. The manual `cp` recipe works as a fallback to the new
+  install-skill subcommand.
+- **SKILL.md `description` frontmatter rewritten.** Replaced soft
+  "use whenever you are about to run SQL" prose with imperative
+  "MANDATORY pre-flight for ALL SQL operations" + an explicit list
+  of triggers (every Postgres verb, migrations, .sql files, RPC
+  bodies, ORM raw-SQL escapes). Description-based skill routing in
+  Claude Code is now significantly more likely to fire on
+  SQL-shaped prompts. Combine with the new
+  `install-skill --with-memory` flag for deterministic activation.
+- **SKILL.md no longer claims `--reflect` is "expected in >= 1.8.0".**
+  It shipped in 1.7.0; the SKILL.md body now references it correctly
+  alongside the `--format=jsonl` recipe.
+
+### Added
+
+- **`vg-local install-skill` subcommand.** Auto-detects up to 5
+  agent harnesses on the current machine + project — Claude Code
+  user scope (`~/.claude/`), Claude Code project scope (`.claude/`
+  in cwd), Cursor's `.cursorrules`, Cursor's `.cursor/rules/` dir,
+  and aider (via `CONVENTIONS.md` or `.aider.conf.yml`) — and
+  installs `SKILL.md` to each.
+- **Interactive by default**, with `--yes` / `-y` for CI / scripts,
+  `--target=<id>` for a specific harness, and `--force` to overwrite
+  existing files (also bypasses the detection requirement when
+  combined with `--target`).
+- **Idempotent appends.** Writes to `.cursorrules` and
+  `CONVENTIONS.md` go between marker comments
+  (`<!-- vibeguard-skill-begin -->` / `<!-- vibeguard-skill-end -->`);
+  re-running the install replaces between markers rather than
+  appending a second copy. Same for the optional `CLAUDE.md` memory
+  line (uses its own marker pair).
+- **Optional `--with-memory=user|project` flag** (or an interactive
+  prompt after install) appends a one-line activation directive to
+  `CLAUDE.md` at the chosen scope. This is the most reliable way to
+  force the skill to fire on every SQL-related prompt — Claude's
+  description-based routing is best-effort; `CLAUDE.md` is a hard
+  directive. **Opt-in only** — the subcommand does not touch
+  `CLAUDE.md` without explicit consent (via the flag, the prompt
+  choice, or `--with-memory=` non-interactively).
+- **Frontmatter is stripped automatically** when writing to
+  harnesses (Cursor's `.cursorrules`, aider's `CONVENTIONS.md`) that
+  don't parse YAML frontmatter — they would otherwise render the
+  `---` fences as literal horizontal rules. The full file (with
+  frontmatter intact) is written to Claude Code's `SKILL.md` and
+  Cursor's `.cursor/rules/*.mdc` paths.
+- **README install recipes rewritten.** Both root and package
+  README now lead with `npx vg-local install-skill` and document
+  the manual `cp` paths as a fallback (now genuinely working
+  because of the `files` field fix above).
+- **Drift prevention.** The SKILL.md content embedded in the
+  install-skill subcommand is generated at build time from the
+  canonical `examples/agent-skill/SKILL.md` via a `prebuild` /
+  `pretest` / `pretypecheck` script. A unit test asserts the inline
+  string matches the source file byte-for-byte, so silent drift is
+  impossible.
+
 ## [1.7.0] - 2026-05-11
 
 **Agent-native output surface.** No new catches, no detection changes.

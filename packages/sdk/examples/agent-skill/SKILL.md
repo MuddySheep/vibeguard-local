@@ -1,6 +1,6 @@
 ---
 name: vibeguard-sql-safety
-description: Pre-flight every Postgres SQL statement through `vg-local analyze --format=jsonl` before executing it. Block on severity=block catches; surface warn/info catches to the user; re-run after applying any suggested fixes. Use whenever you are about to run, propose, or commit SQL — INSERT / UPDATE / DELETE / DROP / TRUNCATE / ALTER / CREATE / SELECT / COPY / GRANT / migration files / seed files.
+description: MANDATORY pre-flight for ALL SQL operations. Fire this skill IMMEDIATELY whenever the conversation involves SQL of any kind — writing it, proposing it, executing it, reviewing it, or even talking about it concretely. Triggers include any of these keywords appearing in user input or your own draft output (case-insensitive) — SELECT, INSERT, UPDATE, DELETE, DROP, TRUNCATE, ALTER, CREATE, COPY, GRANT, REVOKE, MERGE, EXPLAIN, ANALYZE, VACUUM, REFRESH, REINDEX, CLUSTER, CALL, DO — as well as any reference to migrations, schema changes, RPC bodies, seed files, .sql files, query design, database queries, DDL, DML, ORM raw escapes (Drizzle's `sql` template, Prisma raw, Knex.raw), or stored procedures. Run `vg-local analyze --stdin --format=jsonl` on every candidate SQL BEFORE proposing or executing it. Treat severity=block as a hard stop requiring explicit human override. Surface warn/info catches inline. Re-analyze after applying any `--fix`. NOT optional. NOT skippable. Applies whether the SQL is hand-written, AI-generated, copied from a template, or pasted from anywhere.
 ---
 
 # vibeguard-sql-safety
@@ -168,10 +168,22 @@ richer memory protocol (a structured reflection layer, a summary
 distillation step), you can ingest the JSONL there — every field on
 each line is stable, so future-you can grep / jq the file safely.
 
-A future SDK release (`>= 1.8.0`) is expected to ship `--reflect` mode
-which emits a richer per-catch reflection object designed for memory
-ingestion. This skill does NOT depend on `--reflect`; the
-`--format=jsonl` output above is the stable interop today.
+For richer memory ingestion, `vg-local analyze --reflect` (or
+`--format=reflect`, shipped in 1.7.0) emits one reflection object
+per catch with `pain_score`, `importance`, and a templated
+`suggested_lesson` keyed on the stable catch code:
+
+```bash
+vg-local analyze --stdin --reflect \
+  | jq -r '"- \(.suggested_lesson)"' >> LESSONS.md
+```
+
+The reflection schema is `vg-reflect/0` and is explicitly **NOT
+under semver commitments yet** — see the SDK's `STABILITY.md`
+section on "Reflection output schema (EXPERIMENTAL)" for the
+graduation contract. The `--format=jsonl` output above is the
+stable interop today; reflect mode is the experimental forward
+bet.
 
 ## What this skill is NOT
 

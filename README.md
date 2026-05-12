@@ -99,17 +99,29 @@ VibeGuard now speaks fluent agent. Four pieces, designed to compose:
 
 ### Quick start
 
-For Claude Code, drop the skill into the right place:
+One command auto-detects every agent harness on this machine and installs the skill into each. Interactive — prompts before writing.
 
 ```bash
-mkdir -p ~/.claude/skills/vibeguard-sql-safety
-cp node_modules/@vibeguard-dev/local/examples/agent-skill/SKILL.md \
-   ~/.claude/skills/vibeguard-sql-safety/SKILL.md
+npx vg-local install-skill
 ```
 
-(Project-scope alternative: `mkdir -p .claude/skills/vibeguard-sql-safety && cp …` into the project's `.claude` directory.)
+For CI / scripts: `npx vg-local install-skill --yes`. For one specific harness: `--target=claude-user` (or `claude-project`, `cursor-rules-file`, `cursor-rules-dir`, `aider`).
 
-For Cursor or aider, the same `SKILL.md` body works — see the [companion README](./packages/sdk/examples/agent-skill/README.md) for adaptation notes.
+The subcommand also offers (opt-in) a deterministic-activation directive in `CLAUDE.md` — the most reliable way to make the skill fire on every SQL-related prompt:
+
+```bash
+npx vg-local install-skill --yes --with-memory=user
+# or --with-memory=project for project-scoped activation
+```
+
+Manual install (if you prefer not to use the subcommand): the SKILL.md file ships in the tarball at `node_modules/@vibeguard-dev/local/examples/agent-skill/SKILL.md`. Copy it to:
+
+| Harness | Path |
+|---|---|
+| Claude Code (user scope) | `~/.claude/skills/vibeguard-sql-safety/SKILL.md` |
+| Claude Code (project) | `.claude/skills/vibeguard-sql-safety/SKILL.md` |
+| Cursor | append between `<!-- vibeguard-skill-begin -->` / `<!-- vibeguard-skill-end -->` markers in `.cursorrules`, OR drop in `.cursor/rules/vibeguard-sql-safety.mdc` |
+| aider | append to `CONVENTIONS.md`, reference via `aider --read CONVENTIONS.md` |
 
 The agent's pre-flight call from then on:
 

@@ -86,6 +86,36 @@ vg-local analyze 'src/**/*.sql' --fix
 # have fixers; other rules surface their catches unchanged.
 ```
 
+### Agent skill install (`vg-local install-skill`)
+
+One command auto-detects agent harnesses (Claude Code, Cursor, aider)
+on the current machine and project, and installs the
+`vibeguard-sql-safety` skill into each:
+
+```bash
+npx vg-local install-skill          # interactive
+npx vg-local install-skill --yes    # non-interactive (CI / scripts)
+```
+
+For deterministic activation in Claude Code, opt in to a `CLAUDE.md`
+memory directive (the most reliable activation lever — Claude's
+description-based skill routing is best-effort):
+
+```bash
+npx vg-local install-skill --yes --with-memory=user
+# or --with-memory=project for project-scoped activation
+```
+
+Restrict to one specific harness: `--target=claude-user` (or
+`claude-project`, `cursor-rules-file`, `cursor-rules-dir`, `aider`).
+Idempotent — re-running replaces content between marker comments,
+never duplicates. See `vg-local install-skill --help` for the full
+option list.
+
+The `SKILL.md` file also ships in the npm tarball at
+`node_modules/@vibeguard-dev/local/examples/agent-skill/SKILL.md` for
+users who prefer to copy it manually.
+
 ### Machine-readable output (`--format=jsonl`)
 
 For agent harnesses, CI pipelines, and `jq` users, `analyze` has a

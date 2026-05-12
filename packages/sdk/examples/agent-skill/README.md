@@ -5,7 +5,33 @@ example project. There is no `package.json`, no `src/`, no `tests/`.
 The artifact is `SKILL.md`. You copy it into your harness's skills
 directory; your agent reads it and follows its instructions.
 
-## What gets copied where
+## The fast path: `vg-local install-skill` (v1.7.1+)
+
+The CLI ships a subcommand that auto-detects every harness on the
+current machine + project and installs SKILL.md into each:
+
+```bash
+npx vg-local install-skill              # interactive
+npx vg-local install-skill --yes        # non-interactive
+npx vg-local install-skill --target=claude-user   # one specific
+```
+
+It also offers an optional `CLAUDE.md` activation directive for
+deterministic firing in Claude Code (the most reliable activation
+lever — description-based routing is best-effort):
+
+```bash
+npx vg-local install-skill --yes --with-memory=user
+# or --with-memory=project for project-scoped activation
+```
+
+Re-running the subcommand is safe — content goes between marker
+comments (`<!-- vibeguard-skill-begin -->` / `<!-- vibeguard-skill-end -->`)
+so it's replaced in place, never duplicated.
+
+If you'd rather copy the file by hand, the recipes below still work.
+
+## What gets copied where (manual install)
 
 ### Claude Code (Anthropic) — supported out of the box
 
